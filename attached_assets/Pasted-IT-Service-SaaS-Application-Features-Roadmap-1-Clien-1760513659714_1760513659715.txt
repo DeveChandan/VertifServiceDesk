@@ -1,0 +1,70 @@
+IT Service SaaS Application - Features & Roadmap
+________________________________________
+1. Client / Ticket Management
+•	Clients can raise tickets/issues through portal or email.
+•	Ticket details:
+o	Ticket number
+o	Issue description
+o	Priority (High/Medium/Low)
+o	Category (Hardware/Software/Network/etc.)
+o	Attachments (screenshots, logs)
+o	Status (Open / In Progress / Resolved / Closed)
+•	Client remarks after resolution (Yes/No / feedback)
+•	Ticket history for reference
+•	Extra: Automatic ticket numbering, SLA tracking
+2. Employee / Team Management
+•	Add/edit/remove employees (admin only)
+•	Employee profile:
+o	Name, Email, Phone, Domain/Department
+o	Skills (Hardware, Network, Software)
+o	Assigned tickets
+•	Automatic ticket assignment based on skills/domain
+•	Task status tracking (Assigned, In Progress, Completed)
+•	Extra: Role-based access, Employee dashboard
+3. Notifications & Communication
+•	Email notifications:
+o	New ticket assigned to employee
+o	Ticket status updated to client
+•	SMS notifications (Twilio/MSG91) for critical alerts
+•	In-app notifications for employees and clients
+•	Optional: Slack/Teams integration
+4. Reports & Analytics
+•	Ticket metrics: tickets per month/week, average resolution time, pending vs resolved tickets
+•	Employee performance: tickets completed, SLA adherence
+•	Client satisfaction reports
+•	Export reports in CSV/PDF
+5. Client Portal
+•	Clients can:
+o	Raise tickets
+o	Check ticket status
+o	Add comments
+o	Provide feedback
+•	Dashboard with total, resolved, pending tickets
+•	Optional: Multi-client login
+6. Admin Dashboard
+•	Add/manage employees, clients, and tickets
+•	Assign tickets manually
+•	Track SLA compliance
+•	Monitor system health (uptime, DB status)
+•	Extra: View logs of notifications, approve/reject employee task completion
+7. Employee Dashboard
+•	Ticket Details showing
+•	Comments add on work progress
+•	Reply back on tickets
+•	Ticket closure submission
+•	Assign task showing, progress, pending tickets
+8. Optional Advanced Features
+•	Knowledge Base: FAQ, troubleshooting articles, auto-suggest
+•	Chat Support: In-app chat between client & employee
+•	Multi-company support: SaaS supports multiple IT companies
+•	Mobile App / PWA: Push notifications for employees
+•	Automation: Auto-assign tickets, auto-close tickets after inactivity
+Suggested Technology Stack
+•	Frontend: React + Next.js
+•	Backend: NestJS / Node.js
+•	Database: MongoDB (Atlas or VPS-hosted)
+•	Notifications: Nodemailer / Twilio / MSG91
+•	Payments: Stripe / Razorpay
+•	Hosting: Hostinger VPS
+________________________________________
+End of Document
