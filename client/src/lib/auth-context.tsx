@@ -16,12 +16,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
-    const storedToken = localStorage.getItem("token");
-    const storedUser = localStorage.getItem("user");
-    
-    if (storedToken && storedUser) {
-      setToken(storedToken);
-      setUser(JSON.parse(storedUser));
+    try {
+      const storedToken = localStorage.getItem("token");
+      const storedUser = localStorage.getItem("user");
+
+      if (storedToken && storedUser && storedUser !== "undefined" && storedUser !== "null") {
+        const parsedUser = JSON.parse(storedUser);
+        setToken(storedToken);
+        setUser(parsedUser);
+      } else {
+        // Clean up invalid storage values
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+      }
+    } catch (error) {
+      console.warn("⚠️ Invalid user data in localStorage:", error);
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
     }
   }, []);
 

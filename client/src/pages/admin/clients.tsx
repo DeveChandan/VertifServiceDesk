@@ -1,4 +1,4 @@
-import { useQuery } from "@tantml:react-query";
+import { useQuery } from "@tanstack/react-query";
 import { User, UserRole } from "@shared/schema";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";

@@ -8,7 +8,9 @@ export interface IComment extends Document {
   userName?: string;
   userRole?: UserRole;
   content: string;
+  attachments: string[]; // Add this line
   createdAt: Date;
+  updatedAt: Date;
 }
 
 const commentSchema = new Schema<IComment>(
@@ -18,6 +20,10 @@ const commentSchema = new Schema<IComment>(
     userName: { type: String },
     userRole: { type: String, enum: Object.values(UserRole) },
     content: { type: String, required: true },
+    attachments: { 
+      type: [String], // Array of strings
+      default: [] // Default empty array
+    }
   },
   { timestamps: true }
 );

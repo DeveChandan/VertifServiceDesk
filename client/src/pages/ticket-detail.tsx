@@ -8,8 +8,8 @@ import { StatusBadge, PriorityBadge } from "@/components/status-badge";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useState } from "react";
-import { ArrowLeft, Send, Paperclip } from "lucide-react";
+import { useState, useRef } from "react";
+import { ArrowLeft, Send, Paperclip, Eye, Download, X, Upload, Loader2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -19,6 +19,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+interface PendingCommentFile {
+  name: string;
+  file: File;
+  localUrl: string;
+}
+
+// Extended Comment type to include attachments
+interface CommentWithAttachments extends Comment {
+  attachments?: string[];
+}
 
 export default function TicketDetailPage() {
   const params = useParams();
@@ -27,6 +45,11 @@ export default function TicketDetailPage() {
   const { toast } = useToast();
   const [comment, setComment] = useState("");
   const [newStatus, setNewStatus] = useState<TicketStatus | null>(null);
+  const [attachmentDialogOpen, setAttachmentDialogOpen] = useState(false);
+  const [selectedAttachment, setSelectedAttachment] = useState<string | null>(null);
+  const [commentAttachments, setCommentAttachments] = useState<PendingCommentFile[]>([]);
+  const [uploadingCommentFiles, setUploadingCommentFiles] = useState<Set<string>>(new Set());
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const ticketId = params.id;
 
@@ -34,22 +57,76 @@ export default function TicketDetailPage() {
     queryKey: ["/api/tickets", ticketId],
   });
 
-  const { data: comments, isLoading: commentsLoading } = useQuery<Comment[]>({
+  const { data: comments, isLoading: commentsLoading } = useQuery<CommentWithAttachments[]>({
     queryKey: ["/api/tickets", ticketId, "comments"],
   });
 
-  const addCommentMutation = useMutation({
-    mutationFn: async (content: string) => {
-      return await apiRequest("POST", `/api/tickets/${ticketId}/comments`, {
-        content,
+  // File upload mutation for comment attachments
+  const uploadFileMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
       });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Upload failed: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      return result;
+    }
+  });
+
+  // Enhanced comment mutation with proper attachment handling
+  const addCommentMutation = useMutation({
+    mutationFn: async (data: { content: string; attachments?: File[] }) => {
+      let fileUrls: string[] = [];
+
+      // Upload files first if any
+      if (data.attachments && data.attachments.length > 0) {
+        setUploadingCommentFiles(new Set(data.attachments.map(f => f.name)));
+        try {
+          const uploadPromises = data.attachments.map(file => 
+            uploadFileMutation.mutateAsync(file)
+          );
+          const uploadResults = await Promise.all(uploadPromises);
+          fileUrls = uploadResults.map(result => result.fileUrl);
+        } finally {
+          setUploadingCommentFiles(new Set());
+        }
+      }
+
+      // Then create comment with attachment URLs
+      const commentData = {
+        content: data.content,
+        attachments: fileUrls,
+      };
+
+      console.log("Sending comment data:", commentData);
+
+      return await apiRequest("POST", `/api/tickets/${ticketId}/comments`, commentData);
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log("Comment created successfully:", data);
       queryClient.invalidateQueries({ queryKey: ["/api/tickets", ticketId, "comments"] });
       setComment("");
+      setCommentAttachments([]);
       toast({
         title: "Comment added",
         description: "Your comment has been posted successfully.",
+      });
+    },
+    onError: (error: any) => {
+      console.error("Comment creation error:", error);
+      toast({
+        title: "Failed to add comment",
+        description: error.message || "Unable to add comment. Please try again.",
+        variant: "destructive",
       });
     },
   });
@@ -87,6 +164,127 @@ export default function TicketDetailPage() {
       .join("")
       .toUpperCase()
       .slice(0, 2);
+  };
+
+  const getFileIcon = (filename: string) => {
+    const ext = filename.split('.').pop()?.toLowerCase();
+    if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(ext || '')) {
+      return '🖼';
+    } else if (['pdf'].includes(ext || '')) {
+      return '📄';
+    } else if (['doc', 'docx'].includes(ext || '')) {
+      return '📝';
+    } else if (['xls', 'xlsx'].includes(ext || '')) {
+      return '📊';
+    } else if (['txt', 'log'].includes(ext || '')) {
+      return '📃';
+    } else {
+      return '📎';
+    }
+  };
+
+  const getFileNameFromUrl = (url: string): string => {
+    try {
+      const urlObj = new URL(url);
+      const pathname = urlObj.pathname;
+      return pathname.split('/').pop() || 'file';
+    } catch {
+      return 'file';
+    }
+  };
+
+  const handleViewAttachment = (url: string) => {
+    setSelectedAttachment(url);
+  };
+
+  const handleDownloadAttachment = (url: string, filename: string) => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleOpenAllAttachments = () => {
+    setAttachmentDialogOpen(true);
+  };
+
+  // Comment attachment handlers
+  const handleCommentFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const newFiles = Array.from(files);
+    
+    // Validate files
+    for (const file of newFiles) {
+      if (file.size > 10 * 1024 * 1024) {
+        toast({
+          title: "File too large",
+          description: `${file.name} exceeds 10MB limit.`,
+          variant: "destructive",
+        });
+        e.target.value = "";
+        return;
+      }
+    }
+
+    // Check total files limit
+    if (commentAttachments.length + newFiles.length > 5) {
+      toast({
+        title: "Too many files",
+        description: "Maximum 5 files allowed per comment.",
+        variant: "destructive",
+      });
+      e.target.value = "";
+      return;
+    }
+
+    // Add files to pending files with local URLs for preview only
+    const newPendingFiles: PendingCommentFile[] = newFiles.map(file => ({
+      name: file.name,
+      file: file,
+      localUrl: URL.createObjectURL(file)
+    }));
+
+    setCommentAttachments(prev => [...prev, ...newPendingFiles]);
+    
+    // Clear the file input
+    e.target.value = "";
+  };
+
+  const removeCommentAttachment = (index: number) => {
+    const fileToRemove = commentAttachments[index];
+    
+    // Clean up the local URL
+    URL.revokeObjectURL(fileToRemove.localUrl);
+    
+    setCommentAttachments(prev => prev.filter((_, i) => i !== index));
+    setUploadingCommentFiles(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(fileToRemove.name);
+      return newSet;
+    });
+  };
+
+  const viewCommentFilePreview = (localUrl: string) => {
+    window.open(localUrl, "_blank");
+  };
+
+  const isCommentFileUploading = (fileName: string) => {
+    return uploadingCommentFiles.has(fileName);
+  };
+
+  const isAnyCommentFileUploading = uploadingCommentFiles.size > 0;
+
+  const handleAddComment = () => {
+    if (comment.trim() || commentAttachments.length > 0) {
+      addCommentMutation.mutate({
+        content: comment,
+        attachments: commentAttachments.map(f => f.file)
+      });
+    }
   };
 
   if (ticketLoading) {
@@ -129,17 +327,76 @@ export default function TicketDetailPage() {
               <CardTitle>Description</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm whitespace-pre-wrap">{ticket.description}</p>
+              <p className="text-sm whitespace-pre-wrap mb-6">{ticket.description}</p>
+              
+              {/* Enhanced Attachments Section */}
               {ticket.attachments && ticket.attachments.length > 0 && (
-                <div className="mt-4 pt-4 border-t">
-                  <h4 className="text-sm font-medium mb-2">Attachments</h4>
-                  <div className="space-y-1">
-                    {ticket.attachments.map((attachment, index) => (
-                      <div key={index} className="flex items-center gap-2 text-sm">
-                        <Paperclip className="h-4 w-4 text-muted-foreground" />
-                        <span>{attachment}</span>
+                <div className="pt-4 border-t">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-sm font-medium">Attachments ({ticket.attachments.length})</h4>
+                    {ticket.attachments.length > 3 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleOpenAllAttachments}
+                      >
+                        View All
+                      </Button>
+                    )}
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {ticket.attachments.slice(0, 4).map((attachment, index) => {
+                      const filename = getFileNameFromUrl(attachment);
+                      return (
+                        <div
+                          key={index}
+                          className="flex items-center justify-between p-3 border rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <span className="text-lg">{getFileIcon(filename)}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate" title={filename}>
+                                {filename}
+                              </p>
+                              <p className="text-xs text-muted-foreground truncate">
+                                {attachment.length > 30 ? `${attachment.substring(0, 30)}...` : attachment}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 ml-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleViewAttachment(attachment)}
+                              className="h-8 w-8"
+                              title="View file"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDownloadAttachment(attachment, filename)}
+                              className="h-8 w-8"
+                              title="Download file"
+                            >
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {ticket.attachments.length > 4 && (
+                      <div className="flex items-center justify-center p-3 border rounded-lg bg-muted/20">
+                        <Button
+                          variant="ghost"
+                          onClick={handleOpenAllAttachments}
+                          className="text-sm"
+                        >
+                          +{ticket.attachments.length - 4} more files
+                        </Button>
                       </div>
-                    ))}
+                    )}
                   </div>
                 </div>
               )}
@@ -172,8 +429,53 @@ export default function TicketDetailPage() {
                           <span className="text-xs text-muted-foreground capitalize">
                             {comment.userRole}
                           </span>
+                          <span className="text-xs text-muted-foreground">
+                            {comment.createdAt ? new Date(comment.createdAt).toLocaleString() : ''}
+                          </span>
                         </div>
-                        <p className="text-sm">{comment.content}</p>
+                        <p className="text-sm whitespace-pre-wrap">{comment.content}</p>
+                        
+                        {/* Comment Attachments Display */}
+                        {comment.attachments && comment.attachments.length > 0 && (
+                          <div className="mt-2 space-y-2">
+                            {comment.attachments.map((attachment, index) => {
+                              const filename = getFileNameFromUrl(attachment);
+                              return (
+                                <div
+                                  key={index}
+                                  className="flex items-center justify-between p-2 border rounded-md bg-muted/20 text-xs max-w-md"
+                                >
+                                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    <span className="text-sm">{getFileIcon(filename)}</span>
+                                    <span className="truncate" title={filename}>
+                                      {filename}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1 ml-2">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleViewAttachment(attachment)}
+                                      className="h-6 w-6"
+                                      title="View file"
+                                    >
+                                      <Eye className="h-3 w-3" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleDownloadAttachment(attachment, filename)}
+                                      className="h-6 w-6"
+                                      title="Download file"
+                                    >
+                                      <Download className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -185,21 +487,122 @@ export default function TicketDetailPage() {
               )}
 
               <div className="pt-4 border-t">
+                {/* Comment Attachments Preview */}
+                {commentAttachments.length > 0 && (
+                  <div className="mb-3 space-y-2">
+                    <p className="text-sm font-medium">Attachments to upload:</p>
+                    {commentAttachments.map((file, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center justify-between p-2 border rounded-md bg-muted/20"
+                      >
+                        <div className="flex items-center gap-2 flex-1">
+                          {isCommentFileUploading(file.name) ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                          ) : (
+                            <span className="text-lg">{getFileIcon(file.name)}</span>
+                          )}
+                          <span 
+                            className={`text-sm truncate ${
+                              isCommentFileUploading(file.name) ? 'text-muted-foreground' : ''
+                            }`}
+                            title={file.name}
+                          >
+                            {file.name}
+                            {isCommentFileUploading(file.name) && ' (Uploading...)'}
+                          </span>
+                          <span className="text-xs text-muted-foreground ml-2">
+                            ({(file.file.size / 1024 / 1024).toFixed(2)} MB)
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 ml-2">
+                          {!isCommentFileUploading(file.name) && (
+                            <>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => viewCommentFilePreview(file.localUrl)}
+                                className="h-6 w-6"
+                                title="Preview file"
+                                disabled={addCommentMutation.isPending}
+                              >
+                                <Eye className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeCommentAttachment(index)}
+                                className="h-6 w-6 text-destructive hover:text-destructive/90"
+                                title="Remove file"
+                                disabled={addCommentMutation.isPending || isAnyCommentFileUploading}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <Textarea
                   placeholder="Add a comment..."
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
-                  className="mb-3"
+                  className="mb-3 min-h-24"
                   data-testid="input-comment"
+                  disabled={addCommentMutation.isPending}
                 />
-                <Button
-                  onClick={() => addCommentMutation.mutate(comment)}
-                  disabled={!comment.trim() || addCommentMutation.isPending}
-                  data-testid="button-add-comment"
-                >
-                  <Send className="h-4 w-4 mr-2" />
-                  {addCommentMutation.isPending ? "Posting..." : "Post Comment"}
-                </Button>
+                
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleCommentFileChange}
+                      multiple
+                      className="hidden"
+                      accept=".jpg,.jpeg,.png,.gif,.pdf,.doc,.docx,.xls,.xlsx,.txt,.log,.zip,.rar"
+                      disabled={addCommentMutation.isPending || isAnyCommentFileUploading}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={addCommentMutation.isPending || isAnyCommentFileUploading}
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Add Attachment
+                    </Button>
+                    {commentAttachments.length > 0 && (
+                      <span className="text-xs text-muted-foreground">
+                        {commentAttachments.length} file{commentAttachments.length !== 1 ? 's' : ''} selected
+                      </span>
+                    )}
+                  </div>
+                  
+                  <Button
+                    onClick={handleAddComment}
+                    disabled={(!comment.trim() && commentAttachments.length === 0) || addCommentMutation.isPending || isAnyCommentFileUploading}
+                    data-testid="button-add-comment"
+                  >
+                    {addCommentMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        {isAnyCommentFileUploading ? "Uploading..." : "Posting..."}
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4 mr-2" />
+                        Post Comment
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -220,6 +623,10 @@ export default function TicketDetailPage() {
                 <p className="text-sm font-medium capitalize">{ticket.category}</p>
               </div>
               <div>
+                <p className="text-sm text-muted-foreground mb-1">Status</p>
+                <StatusBadge status={ticket.status} />
+              </div>
+              <div>
                 <p className="text-sm text-muted-foreground mb-1">Client</p>
                 <p className="text-sm font-medium">{ticket.clientName}</p>
               </div>
@@ -233,10 +640,27 @@ export default function TicketDetailPage() {
                 <p className="text-sm text-muted-foreground mb-1">Created</p>
                 <p className="text-sm font-medium">
                   {ticket.createdAt
-                    ? new Date(ticket.createdAt).toLocaleDateString()
+                    ? new Date(ticket.createdAt).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })
                     : "N/A"}
                 </p>
               </div>
+              {ticket.attachments && ticket.attachments.length > 0 && (
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">Attachments</p>
+                  <div className="flex items-center gap-2">
+                    <Paperclip className="h-4 w-4 text-muted-foreground" />
+                    <p className="text-sm font-medium">
+                      {ticket.attachments.length} file{ticket.attachments.length !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -273,6 +697,144 @@ export default function TicketDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Attachment View Dialog */}
+      <Dialog open={!!selectedAttachment} onOpenChange={() => setSelectedAttachment(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Paperclip className="h-5 w-5" />
+              {selectedAttachment ? getFileNameFromUrl(selectedAttachment) : 'Attachment'}
+            </DialogTitle>
+            <DialogDescription>
+              Viewing attachment from Ticket #{ticket.ticketNumber}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex-1 min-h-0">
+            {selectedAttachment && (
+              <div className="h-full flex flex-col">
+                <div className="flex-1 min-h-0 border rounded-lg bg-muted/20">
+                  {selectedAttachment.match(/\.(jpg|jpeg|png|gif|bmp|webp)$/i) ? (
+                    <img
+                      src={selectedAttachment}
+                      alt={getFileNameFromUrl(selectedAttachment)}
+                      className="w-full h-full object-contain max-h-[60vh]"
+                    />
+                  ) : selectedAttachment.match(/\.pdf$/i) ? (
+                    <iframe
+                      src={selectedAttachment}
+                      className="w-full h-full min-h-[60vh] border-0"
+                      title={getFileNameFromUrl(selectedAttachment)}
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+                      <Paperclip className="h-16 w-16 mb-4" />
+                      <p className="text-lg mb-2">File Preview Not Available</p>
+                      <p className="text-sm">Please download the file to view its contents</p>
+                      <Button
+                        variant="outline"
+                        className="mt-4"
+                        onClick={() => handleDownloadAttachment(selectedAttachment, getFileNameFromUrl(selectedAttachment))}
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Download File
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="flex justify-between items-center pt-4 mt-4 border-t">
+                  <div className="text-sm text-muted-foreground">
+                    {getFileNameFromUrl(selectedAttachment)}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => handleDownloadAttachment(selectedAttachment, getFileNameFromUrl(selectedAttachment))}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Download
+                    </Button>
+                    <Button
+                      onClick={() => setSelectedAttachment(null)}
+                    >
+                      Close
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* All Attachments Dialog */}
+      <Dialog open={attachmentDialogOpen} onOpenChange={setAttachmentDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              All Attachments - Ticket #{ticket.ticketNumber}
+            </DialogTitle>
+            <DialogDescription>
+              {ticket.attachments?.length} file{ticket.attachments?.length !== 1 ? 's' : ''} attached to this ticket
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {ticket.attachments && ticket.attachments.map((attachment, index) => {
+              const filename = getFileNameFromUrl(attachment);
+              return (
+                <div
+                  key={index}
+                  className="flex items-center justify-between p-3 border rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <span className="text-lg">{getFileIcon(filename)}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate" title={filename}>
+                        {filename}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate" title={attachment}>
+                        {attachment}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 ml-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleViewAttachment(attachment)}
+                      className="h-8 w-8"
+                      title="View file"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDownloadAttachment(attachment, filename)}
+                      className="h-8 w-8"
+                      title="Download file"
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setAttachmentDialogOpen(false)}
+            >
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -43,6 +43,36 @@ export const userSchema = z.object({
   phone: z.string().optional(),
   department: z.string().optional(),
   skills: z.array(z.string()).optional(),
+  jobTitle: z.string().optional(),
+  employeeId: z.string().optional(),
+  dateOfBirth: z.string().optional(),
+  address: z
+    .object({
+      street: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      country: z.string().optional(),
+      zipCode: z.string().optional(),
+    })
+    .optional(),
+  emergencyContact: z
+    .object({
+      name: z.string().optional(),
+      relationship: z.string().optional(),
+      phone: z.string().optional(),
+    })
+    .optional(),
+  employmentDetails: z
+    .object({
+      hireDate: z.string().optional(),
+      employmentType: z.enum(["full-time", "part-time", "contract"]).optional(),
+      salary: z.number().optional(),
+      reportsTo: z.string().optional(),
+    })
+    .optional(),
+  isActive: z.boolean().optional(),
+  profileImage: z.string().optional(),
+  lastLoginAt: z.date().optional(),
   createdAt: z.date().optional(),
 });
 

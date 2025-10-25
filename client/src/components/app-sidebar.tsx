@@ -44,6 +44,11 @@ export function AppSidebar() {
       url: "/client/dashboard",
       icon: LayoutDashboard,
     },
+      {
+      title: "Profile",
+      url: "/client/profile",
+      icon: Users,
+    },
     {
       title: "My Tickets",
       url: "/client/tickets",
@@ -62,6 +67,11 @@ export function AppSidebar() {
       url: "/employee/dashboard",
       icon: LayoutDashboard,
     },
+     {
+      title: "Profile",
+      url: "/employee/profile",
+      icon: Users,
+    },
     {
       title: "Assigned Tickets",
       url: "/employee/tickets",
@@ -75,6 +85,11 @@ export function AppSidebar() {
       url: "/admin/dashboard",
       icon: LayoutDashboard,
     },
+      {
+      title: "Profile",
+      url: "/admin/profile",
+      icon: Users,
+    },
     {
       title: "Tickets",
       url: "/admin/tickets",
@@ -83,6 +98,11 @@ export function AppSidebar() {
     {
       title: "Employees",
       url: "/admin/employees",
+      icon: UserCog,
+    },
+     {
+      title: "UserManagement",
+      url: "/admin/users",
       icon: UserCog,
     },
     {
@@ -112,7 +132,7 @@ export function AppSidebar() {
             <Settings className="h-5 w-5 text-primary-foreground" />
           </div>
           <div className="flex flex-col">
-            <span className="font-semibold text-sm">ServiceDesk Pro</span>
+            <span className="font-semibold text-sm"> Vertif ServiceDesk</span>
             <span className="text-xs text-muted-foreground capitalize">
               {user?.role} Portal
             </span>

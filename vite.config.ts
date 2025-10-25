@@ -36,5 +36,8 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
+    hmr: {
+      overlay: false, // 👈 disable the red error popup
+    },
   },
 });
