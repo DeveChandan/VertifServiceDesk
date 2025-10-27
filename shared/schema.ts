@@ -77,6 +77,77 @@ export const userSchema = z.object({
 });
 
 export const insertUserSchema = userSchema.omit({ _id: true, createdAt: true });
+
+// Client-specific schema
+export const clientSchema = userSchema.extend({
+  company: z.string().optional(),
+  industry: z.string().optional(),
+  clientType: z.enum(["individual", "business", "enterprise"]).optional(),
+  clientId: z.string().optional(),
+  contactPerson: z.string().optional(),
+  billingAddress: z
+    .object({
+      street: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      country: z.string().optional(),
+      zipCode: z.string().optional(),
+    })
+    .optional(),
+  shippingAddress: z
+    .object({
+      street: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      country: z.string().optional(),
+      zipCode: z.string().optional(),
+    })
+    .optional(),
+  clientDetails: z
+    .object({
+      since: z.string().optional(),
+      contractValue: z.number().optional(),
+      paymentTerms: z.string().optional(),
+      accountManager: z.string().optional(),
+    })
+    .optional(),
+});
+
+export const insertClientSchema = insertUserSchema.extend({
+  company: z.string().optional(),
+  industry: z.string().optional(),
+  clientType: z.enum(["individual", "business", "enterprise"]).optional(),
+  clientId: z.string().optional(),
+  contactPerson: z.string().optional(),
+  billingAddress: z
+    .object({
+      street: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      country: z.string().optional(),
+      zipCode: z.string().optional(),
+    })
+    .optional(),
+  shippingAddress: z
+    .object({
+      street: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      country: z.string().optional(),
+      zipCode: z.string().optional(),
+    })
+    .optional(),
+  clientDetails: z
+    .object({
+      since: z.string().optional(),
+      contractValue: z.number().optional(),
+      paymentTerms: z.string().optional(),
+      accountManager: z.string().optional(),
+    })
+    .optional(),
+});
+
+
 export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
@@ -99,6 +170,13 @@ export const ticketSchema = z.object({
   clientName: z.string().optional(),
   assignedTo: z.string().optional(),
   assignedToName: z.string().optional(),
+  assignedEmployees: z.array(z.object({
+    employeeId: z.string(),
+    employeeName: z.string(),
+    assignedAt: z.date(),
+    isPrimary: z.boolean(),
+    department: z.string(),
+  })).optional(),
   attachments: z.array(z.string()).optional(),
   createdAt: z.date().optional(),
   updatedAt: z.date().optional(),

@@ -47,10 +47,11 @@ export default function AdminTicketsPage() {
   // Single assignment mutation
   const assignTicketMutation = useMutation({
     mutationFn: async ({ ticketId, employeeId }: { ticketId: string; employeeId: string }) => {
-      return await apiRequest("PATCH", `/api/tickets/${ticketId}/assign`, { employeeId });
+      return await apiRequest("PATCH", `/api/tickets/${ticketId}/assign`, { employeeIds: [employeeId] });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tickets/assigned"] });
       setSelectedTicket(null);
       setAssignTo("");
       toast({
@@ -67,6 +68,7 @@ export default function AdminTicketsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tickets/assigned"] });
       setSelectedTicket(null);
       setSelectedEmployees([]);
       toast({

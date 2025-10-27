@@ -72,11 +72,11 @@ export function AppSidebar() {
       url: "/employee/profile",
       icon: Users,
     },
-    {
+    /*{
       title: "Assigned Tickets",
       url: "/employee/tickets",
       icon: Ticket,
-    },
+    },*/
   ];
 
   const adminMenuItems = [

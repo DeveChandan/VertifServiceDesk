@@ -6,6 +6,7 @@ import { TicketModel } from "./models/ticket.model";
 import { CommentModel } from "./models/comment.model";
 import { authenticateToken, authorizeRoles, generateToken, AuthRequest } from "./middleware/auth";
 import { UserRole, TicketStatus, TicketPriority } from "@shared/schema";
+import { vertifitEmailService } from '../client/src/lib/vertifitEmail'; // Adjust path as needed
 import { connectDB } from "./db";
 //new add upload logic
 import multer from 'multer';
@@ -263,11 +264,24 @@ app.get("/api/users/employees", authenticateToken, authorizeRoles(UserRole.ADMIN
 
 app.get("/api/users/clients", authenticateToken, authorizeRoles(UserRole.ADMIN), async (req, res) => {
   try {
-    const clients = await UserModel.find({ 
-      role: UserRole.CLIENT,
-      isActive: true 
-    }).select("-password").sort({ createdAt: -1 });
-    res.json(clients.map(getUserResponse));
+    const clients = await UserModel.find({ role: UserRole.CLIENT })
+      .select("-password")
+      .lean();
+    
+    // Transform the data to ensure all client fields are included
+    const clientsWithAllFields = clients.map(client => ({
+      ...client,
+      company: client.company || null,
+      industry: client.industry || null,
+      clientType: client.clientType || "individual",
+      clientId: client.clientId || null,
+      contactPerson: client.contactPerson || null,
+      billingAddress: client.billingAddress || null,
+      shippingAddress: client.shippingAddress || null,
+      clientDetails: client.clientDetails || null,
+    }));
+    
+    res.json(clientsWithAllFields);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -293,11 +307,92 @@ app.get("/api/users", authenticateToken, authorizeRoles(UserRole.ADMIN), async (
 // Get user by ID
 app.get("/api/users/:id", authenticateToken, authorizeRoles(UserRole.ADMIN), async (req, res) => {
   try {
-    const user = await UserModel.findById(req.params.id).select("-password");
+    const user = await UserModel.findById(req.params.id)
+      .select("-password")
+      .lean(); // Use lean() for better performance
+    
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    res.json(getUserResponse(user));
+    
+    // If using virtuals, you might need to manually add them
+    const userResponse = getUserResponse(user);
+    
+    // Add virtual fields manually if they're not included by default
+    if (user.address) {
+      userResponse.fullAddress = `${user.address.street}, ${user.address.city}, ${user.address.state} ${user.address.zipCode}, ${user.address.country}`.trim();
+    }
+    
+    if (user.billingAddress) {
+      userResponse.fullBillingAddress = `${user.billingAddress.street}, ${user.billingAddress.city}, ${user.billingAddress.state} ${user.billingAddress.zipCode}, ${user.billingAddress.country}`.trim();
+    }
+    
+    if (user.shippingAddress) {
+      userResponse.fullShippingAddress = `${user.shippingAddress.street}, ${user.shippingAddress.city}, ${user.shippingAddress.state} ${user.shippingAddress.zipCode}, ${user.shippingAddress.country}`.trim();
+    }
+    
+    // Calculate age if dateOfBirth exists
+    if (user.dateOfBirth) {
+      const today = new Date();
+      const birthDate = new Date(user.dateOfBirth);
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      userResponse.age = age;
+    }
+    
+    // Calculate tenure if employmentDetails.hireDate exists
+    if (user.employmentDetails?.hireDate) {
+      const today = new Date();
+      const hireDate = new Date(user.employmentDetails.hireDate);
+      const years = today.getFullYear() - hireDate.getFullYear();
+      const months = today.getMonth() - hireDate.getMonth();
+      
+      let totalMonths = years * 12 + months;
+      if (today.getDate() < hireDate.getDate()) {
+        totalMonths--;
+      }
+      
+      const tenureYears = Math.floor(totalMonths / 12);
+      const tenureMonths = totalMonths % 12;
+      
+      if (tenureYears === 0) {
+        userResponse.tenure = `${tenureMonths} month${tenureMonths !== 1 ? 's' : ''}`;
+      } else if (tenureMonths === 0) {
+        userResponse.tenure = `${tenureYears} year${tenureYears !== 1 ? 's' : ''}`;
+      } else {
+        userResponse.tenure = `${tenureYears} year${tenureYears !== 1 ? 's' : ''} ${tenureMonths} month${tenureMonths !== 1 ? 's' : ''}`;
+      }
+    }
+    
+    // Calculate client relationship duration if clientDetails.since exists
+    if (user.clientDetails?.since) {
+      const today = new Date();
+      const sinceDate = new Date(user.clientDetails.since);
+      const years = today.getFullYear() - sinceDate.getFullYear();
+      const months = today.getMonth() - sinceDate.getMonth();
+      
+      let totalMonths = years * 12 + months;
+      if (today.getDate() < sinceDate.getDate()) {
+        totalMonths--;
+      }
+      
+      const durationYears = Math.floor(totalMonths / 12);
+      const durationMonths = totalMonths % 12;
+      
+      if (durationYears === 0) {
+        userResponse.clientSinceDuration = `${durationMonths} month${durationMonths !== 1 ? 's' : ''}`;
+      } else if (durationMonths === 0) {
+        userResponse.clientSinceDuration = `${durationYears} year${durationYears !== 1 ? 's' : ''}`;
+      } else {
+        userResponse.clientSinceDuration = `${durationYears} year${durationYears !== 1 ? 's' : ''} ${durationMonths} month${durationMonths !== 1 ? 's' : ''}`;
+      }
+    }
+    
+    res.json(userResponse);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -308,22 +403,29 @@ app.post("/api/users", authenticateToken, authorizeRoles(UserRole.ADMIN), async 
     const {
       name,
       email,
-      password,
       role = UserRole.EMPLOYEE,
       phone,
       department,
       skills,
       skillsString,
       jobTitle,
-      employeeId,
       dateOfBirth,
       address,
       emergencyContact,
-      employmentDetails
+      employmentDetails,
+      // Client-specific fields
+      company,
+      industry,
+      clientType,
+      clientId,
+      contactPerson,
+      billingAddress,
+      shippingAddress,
+      clientDetails
     } = req.body;
 
-    if (!name || !email || !password) {
-      return res.status(400).json({ message: "name, email and password are required" });
+    if (!name || !email) {
+      return res.status(400).json({ message: "name and email are required" });
     }
 
     const existingUser = await UserModel.findOne({ email });
@@ -331,44 +433,129 @@ app.post("/api/users", authenticateToken, authorizeRoles(UserRole.ADMIN), async 
       return res.status(400).json({ message: "Email already registered" });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const temporaryPassword = Math.random().toString(36).slice(-8);
+    const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
 
-    // Normalize skills coming from UI (either array or skillsString)
-    const finalSkills: string[] = Array.isArray(skills)
-      ? skills
-      : (typeof skillsString === "string" && skillsString.trim().length > 0)
-      ? skillsString.split(",").map((s: string) => s.trim()).filter(Boolean)
-      : [];
-
-    // Convert dateOfBirth if provided
-    const dob = dateOfBirth ? new Date(dateOfBirth) : undefined;
-
-    // Normalize employmentDetails.hireDate if provided
-    const normalizedEmploymentDetails = employmentDetails
-      ? {
-          ...employmentDetails,
-          hireDate: employmentDetails.hireDate ? new Date(employmentDetails.hireDate) : undefined,
-        }
-      : undefined;
-
-    // Auto-generate employeeId if not provided
-    const finalEmployeeId = employeeId || `EMP-${Date.now().toString().slice(-6)}`;
-
-    const user = await UserModel.create({
+    // Common user data
+    const userData: any = {
       name,
       email,
       password: hashedPassword,
       role,
       phone,
-      department: department || "General",
-      skills: finalSkills,
-      jobTitle,
-      employeeId: finalEmployeeId,
-      dateOfBirth: dob,
-      address,
-      emergencyContact,
-      employmentDetails: normalizedEmploymentDetails,
       isActive: true,
+    };
+
+    // Handle employee-specific data
+    if (role === UserRole.EMPLOYEE) {
+      // Normalize skills coming from UI (either array or skillsString)
+      const finalSkills: string[] = Array.isArray(skills)
+        ? skills
+        : (typeof skillsString === "string" && skillsString.trim().length > 0)
+        ? skillsString.split(",").map((s: string) => s.trim()).filter(Boolean)
+        : [];
+
+      // Convert dateOfBirth if provided
+      const dob = dateOfBirth ? new Date(dateOfBirth) : undefined;
+
+      // Normalize employmentDetails.hireDate if provided
+      const normalizedEmploymentDetails = employmentDetails
+        ? {
+            ...employmentDetails,
+            hireDate: employmentDetails.hireDate ? new Date(employmentDetails.hireDate) : undefined,
+          }
+        : undefined;
+
+      // Auto-generate employeeId if not provided
+      const finalEmployeeId = `EMP-${Date.now().toString().slice(-6)}`;
+
+      userData.department = department || "General";
+      userData.skills = finalSkills;
+      userData.jobTitle = jobTitle;
+      userData.employeeId = finalEmployeeId;
+      userData.dateOfBirth = dob;
+      userData.address = address;
+      userData.emergencyContact = emergencyContact;
+      userData.employmentDetails = normalizedEmploymentDetails;
+    }
+
+    // Handle client-specific data
+    if (role === UserRole.CLIENT) {
+      // Auto-generate clientId if not provided
+      const finalClientId = clientId || `CLI-${Date.now().toString().slice(-6)}`;
+
+      // Normalize clientDetails.since if provided
+      const normalizedClientDetails = clientDetails
+        ? {
+            ...clientDetails,
+            since: clientDetails.since ? new Date(clientDetails.since) : undefined,
+          }
+        : undefined;
+
+      userData.company = company;
+      userData.industry = industry;
+      userData.clientType = clientType || "individual";
+      userData.clientId = finalClientId;
+      userData.contactPerson = contactPerson;
+      userData.billingAddress = billingAddress;
+      userData.shippingAddress = shippingAddress;
+      userData.clientDetails = normalizedClientDetails;
+    }
+
+    const user = await UserModel.create(userData);
+
+    // Send welcome email
+    let emailHtml;
+    if (user.role === UserRole.EMPLOYEE) {
+      emailHtml = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
+            <h1 style="margin: 0;">Welcome to Vertifit Service Desk</h1>
+          </div>
+          <div style="background: white; padding: 30px;">
+            <h2>Hello ${user.name},</h2>
+            <p>Your Employee account has been created successfully.</p>
+            <p>Your Employee ID is: <strong>${user.employeeId}</strong></p>
+            
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea;">
+              <h3 style="margin-top: 0;">Your Login Credentials:</h3>
+              <p><strong>Email:</strong> ${user.email}</p>
+              <p><strong>Password:</strong> ${temporaryPassword}</p>
+              <p><strong>Login URL:</strong> <a href="${process.env.APP_URL}">${process.env.APP_URL}</a></p>
+            </div>
+            
+            <p>Please log in and change your password after first login.</p>
+          </div>
+        </div>
+      `;
+    } else {
+      emailHtml = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
+            <h1 style="margin: 0;">Welcome to Vertifit Service Desk</h1>
+          </div>
+          <div style="background: white; padding: 30px;">
+            <h2>Hello ${user.name},</h2>
+            <p>Your Client account has been created successfully.</p>
+            
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea;">
+              <h3 style="margin-top: 0;">Your Login Credentials:</h3>
+              <p><strong>Email:</strong> ${user.email}</p>
+              <p><strong>Password:</strong> ${temporaryPassword}</p>
+              <p><strong>Login URL:</strong> <a href="${process.env.APP_URL}">${process.env.APP_URL}</a></p>
+            </div>
+            
+            <p>Please log in and change your password after first login.</p>
+          </div>
+        </div>
+      `;
+    }
+
+    await vertifitEmailService.sendEmail({
+      to: user.email,
+      subject: `Welcome to Vertifit Service Desk - Your ${user.role} Account`,
+      html: emailHtml,
+      text: `Welcome to Vertifit Service Desk! Your ${user.role} account has been created. Email: ${user.email}, Password: ${temporaryPassword}, Login: ${process.env.APP_URL}`
     });
 
     const userResponse = getUserResponse(user);
@@ -562,14 +749,13 @@ function getUserResponse(user: any) {
 */
 app.post("/api/tickets", authenticateToken, async (req: AuthRequest, res) => {
   try {
-    const { title, description, priority, category, attachments } = req.body;
+    const { title, description, priority, department, category, attachments } = req.body;
 
     const ticketCount = await TicketModel.countDocuments();
     const ticketNumber = `TKT-${String(ticketCount + 1).padStart(5, "0")}`;
 
     const client = await UserModel.findById(req.user!._id);
-    const clientDepartment = client?.department || "General";
-
+    
     // ✅ Create ticket with client's department
     const ticketData: any = {
       ticketNumber,
@@ -577,18 +763,22 @@ app.post("/api/tickets", authenticateToken, async (req: AuthRequest, res) => {
       description,
       priority,
       category,
-      department: clientDepartment,
+      department,
       status: TicketStatus.OPEN,
       clientId: req.user!._id,
       clientName: client?.name,
+      clientEmail: client?.email, // Store client email for notifications
       attachments,
-      assignedEmployees: [], // Will be populated if auto-assigned
+      assignedEmployees: [],
     };
+
+    let assignedEmployeesDetails: any[] = [];
+    let assignedEmails: string[] = [];
 
     // ✅ Auto-assignment logic for multiple employees
     const availableEmployees = await UserModel.find({ 
       role: UserRole.EMPLOYEE,
-      department: clientDepartment
+      department,
     });
 
     if (availableEmployees.length > 0) {
@@ -615,13 +805,17 @@ app.post("/api/tickets", authenticateToken, async (req: AuthRequest, res) => {
 
       if (availableEmployeesList.length > 0) {
         // Assign multiple employees
-        const assignedEmployeesDetails = availableEmployeesList.map((empData, index) => ({
+        assignedEmployeesDetails = availableEmployeesList.map((empData, index) => ({
           employeeId: empData.employee._id.toString(),
           employeeName: empData.employee.name,
+          employeeEmail: empData.employee.email,
           assignedAt: new Date(),
           isPrimary: index === 0, // First one is primary
-          department: empData.employee.department || clientDepartment
+          department: empData.employee.department || department
         }));
+
+        // Collect assigned employee emails
+        assignedEmails = assignedEmployeesDetails.map(emp => emp.employeeEmail);
 
         // Update ticket data with assignments
         ticketData.assignedEmployees = assignedEmployeesDetails;
@@ -633,20 +827,175 @@ app.post("/api/tickets", authenticateToken, async (req: AuthRequest, res) => {
           ticketData.assignedToName = assignedEmployeesDetails[0].employeeName;
         }
 
-        console.log(`✅ Ticket auto-assigned to ${assignedEmployeesDetails.map(emp => emp.employeeName).join(', ')} (Department: ${clientDepartment})`);
+        console.log(`✅ Ticket auto-assigned to ${assignedEmployeesDetails.map(emp => emp.employeeName).join(', ')} (Department: ${department})`);
       } else {
-        console.log(`⚠️ No available employees in ${clientDepartment} department`);
+        console.log(`⚠️ No available employees in ${department} department`);
       }
     } else {
-      console.log(`⚠️ No employees found in ${clientDepartment} department`);
+      console.log(`⚠️ No employees found in ${department} department`);
     }
 
     const ticket = await TicketModel.create(ticketData);
+
+    // ✅ Send email notifications after successful ticket creation
+    await sendTicketCreationEmails(ticket, assignedEmployeesDetails, client);
+
     res.json(ticket);
   } catch (error: any) {
+    console.error("Ticket creation error:", error);
     res.status(500).json({ message: error.message });
   }
 });
+
+// ✅ Email notification function
+async function sendTicketCreationEmails(ticket: any, assignedEmployees: any[], client: any) {
+  try {
+    const adminUsers = await UserModel.find({ role: UserRole.ADMIN });
+    const adminEmails = adminUsers.map(admin => admin.email);
+
+    const assignedEmployeeNames = assignedEmployees.map(emp => emp.employeeName).join(', ');
+    const priorityColor = getPriorityColor(ticket.priority);
+    const categoryIcon = getCategoryIcon(ticket.category);
+
+    // Base email template
+    const baseEmailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9fafb;">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
+          <h1 style="margin: 0; font-size: 24px;">🎫 New Support Ticket Created</h1>
+        </div>
+        
+        <div style="background: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <!-- Ticket Header -->
+          <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid ${priorityColor};">
+            <h2 style="margin: 0 0 10px 0; color: #2d3748;">${ticket.title}</h2>
+            <div style="display: flex; gap: 15px; flex-wrap: wrap; font-size: 14px;">
+              <span><strong>Ticket #:</strong> ${ticket.ticketNumber}</span>
+              <span style="background: ${priorityColor}; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px;">
+                ${ticket.priority.toUpperCase()}
+              </span>
+              <span>${categoryIcon} ${ticket.category}</span>
+              <span>🏢 ${ticket.department}</span>
+            </div>
+          </div>
+
+          <!-- Ticket Details -->
+          <div style="margin-bottom: 20px;">
+            <h3 style="color: #4a5568; margin-bottom: 10px;">📋 Description</h3>
+            <p style="background: #f7fafc; padding: 15px; border-radius: 6px; border-left: 3px solid #e2e8f0; margin: 0;">
+              ${ticket.description}
+            </p>
+          </div>
+
+          <!-- Assignment Status -->
+          <div style="margin-bottom: 20px;">
+            <h3 style="color: #4a5568; margin-bottom: 10px;">👥 Assignment</h3>
+            ${assignedEmployees.length > 0 
+              ? `<p style="color: #38a169; background: #f0fff4; padding: 12px; border-radius: 6px; border-left: 3px solid #38a169;">
+                 ✅ Auto-assigned to: <strong>${assignedEmployeeNames}</strong>
+                 </p>` 
+              : `<p style="color: #e53e3e; background: #fed7d7; padding: 12px; border-radius: 6px; border-left: 3px solid #e53e3e;">
+                 ⚠️ Awaiting manual assignment
+                 </p>`
+            }
+          </div>
+
+          <!-- Quick Actions -->
+          <div style="background: #edf2f7; padding: 20px; border-radius: 8px; text-align: center;">
+            <a href="${process.env.APP_URL}/tickets/${ticket._id}" 
+               style="background: #667eea; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">
+              📝 View Ticket Details
+            </a>
+          </div>
+        </div>
+        
+        <div style="text-align: center; padding: 20px; color: #718096; font-size: 12px;">
+          <p>This is an automated notification from Vertifit Service Desk</p>
+        </div>
+      </div>
+    `;
+
+    const emailPromises = [];
+
+    // 1. Send to assigned employees
+    if (assignedEmployees.length > 0) {
+      assignedEmployees.forEach(employee => {
+        const employeeEmailHtml = baseEmailHtml.replace(
+          '🎫 New Support Ticket Created',
+          `🎫 New Ticket Assigned to You - ${ticket.ticketNumber}`
+        );
+        
+        emailPromises.push(
+          vertifitEmailService.sendEmail({
+            to: employee.employeeEmail,
+            subject: `🎫 New Ticket Assigned: ${ticket.ticketNumber} - ${ticket.title}`,
+            html: employeeEmailHtml,
+            text: `New ticket ${ticket.ticketNumber} has been assigned to you. Title: ${ticket.title}, Priority: ${ticket.priority}, Department: ${ticket.department}`
+          })
+        );
+      });
+    }
+
+    // 2. Send to client (creator)
+    const clientEmailHtml = baseEmailHtml.replace(
+      '🎫 New Support Ticket Created',
+      `🎫 Your Ticket Has Been Created - ${ticket.ticketNumber}`
+    );
+    
+    emailPromises.push(
+      vertifitEmailService.sendEmail({
+        to: client.email,
+        subject: `🎫 Ticket Created Successfully: ${ticket.ticketNumber} - ${ticket.title}`,
+        html: clientEmailHtml,
+        text: `Your ticket ${ticket.ticketNumber} has been created successfully. We'll notify you when it's assigned.`
+      })
+    );
+
+    // 3. Send to all admins
+    if (adminEmails.length > 0) {
+      const adminEmailHtml = baseEmailHtml.replace(
+        '🎫 New Support Ticket Created',
+        `🎫 New Ticket Created - ${ticket.ticketNumber}`
+      );
+      
+      emailPromises.push(
+        vertifitEmailService.sendEmail({
+          to: adminEmails,
+          subject: `🎫 New Ticket Created: ${ticket.ticketNumber} - ${ticket.title}`,
+          html: adminEmailHtml,
+          text: `New ticket ${ticket.ticketNumber} created by ${client.name}. Title: ${ticket.title}, Department: ${ticket.department}`
+        })
+      );
+    }
+
+    // Send all emails concurrently
+    await Promise.allSettled(emailPromises);
+    console.log(`✅ Email notifications sent for ticket ${ticket.ticketNumber}`);
+
+  } catch (emailError) {
+    console.error("❌ Failed to send email notifications:", emailError);
+    // Don't throw error - ticket creation should succeed even if emails fail
+  }
+}
+
+// ✅ Helper functions for styling
+function getPriorityColor(priority: string): string {
+  const colors: Record<string, string> = {
+    high: '#e53e3e',
+    medium: '#ed8936',
+    low: '#38a169'
+  };
+  return colors[priority.toLowerCase()] || '#718096';
+}
+
+function getCategoryIcon(category: string): string {
+  const icons: Record<string, string> = {
+    hardware: '💻',
+    software: '📱',
+    network: '🌐',
+    other: '📄'
+  };
+  return icons[category.toLowerCase()] || '📋';
+}
  app.get("/api/tickets", authenticateToken, async (req: AuthRequest, res) => {
   try {
     const tickets = await TicketModel.find().sort({ createdAt: -1 });
@@ -696,7 +1045,8 @@ app.get("/api/tickets/:id", authenticateToken, async (req, res) => {
   }
 });
 
-  app.patch("/api/tickets/:id", authenticateToken, async (req, res) => {
+// Update ticket status with email notifications
+app.patch("/api/tickets/:id", authenticateToken, async (req, res) => {
     try {
       const { status } = req.body;
       const updates: any = { status };
@@ -707,11 +1057,15 @@ app.get("/api/tickets/:id", authenticateToken, async (req, res) => {
         updates.closedAt = new Date();
       }
 
+      const oldTicket = await TicketModel.findById(req.params.id);
       const ticket = await TicketModel.findByIdAndUpdate(req.params.id, updates, { new: true });
 
       if (!ticket) {
         return res.status(404).json({ message: "Ticket not found" });
       }
+
+      // Send status update emails
+      await sendTicketStatusUpdateEmails(oldTicket, ticket);
 
       res.json(ticket);
     } catch (error: any) {
@@ -719,10 +1073,10 @@ app.get("/api/tickets/:id", authenticateToken, async (req, res) => {
     }
   });
 
-// Assign multiple employees to a ticket
+// Assign multiple employees to a ticket with email notifications
 app.patch("/api/tickets/:id/assign", authenticateToken, authorizeRoles(UserRole.ADMIN), async (req, res) => {
   try {
-    const { employeeIds } = req.body; // Now accepts array of employee IDs
+    const { employeeIds } = req.body;
 
     if (!employeeIds || !Array.isArray(employeeIds)) {
       return res.status(400).json({ message: "employeeIds must be an array" });
@@ -753,7 +1107,7 @@ app.patch("/api/tickets/:id/assign", authenticateToken, authorizeRoles(UserRole.
         return {
           employee,
           activeTicketCount,
-          isAvailable: activeTicketCount < 5 // Max 5 tickets per employee
+          isAvailable: activeTicketCount < 5
         };
       })
     );
@@ -774,18 +1128,25 @@ app.patch("/api/tickets/:id/assign", authenticateToken, authorizeRoles(UserRole.
     const assignedEmployeesDetails = employees.map((employee, index) => ({
       employeeId: employee._id.toString(),
       employeeName: employee.name,
+      employeeEmail: employee.email,
       assignedAt: new Date(),
-      isPrimary: index === 0, // First one is primary
+      isPrimary: index === 0,
       department: employee.department || ticket.department
     }));
 
+    // Store old assignments for email comparison
+    const oldAssignments = ticket.assignedEmployees || [];
+
     // Update ticket
     ticket.assignedEmployees = assignedEmployeesDetails;
-    ticket.assignedTo = assignedEmployeesDetails[0].employeeId; // Primary for compatibility
+    ticket.assignedTo = assignedEmployeesDetails[0].employeeId;
     ticket.assignedToName = assignedEmployeesDetails[0].employeeName;
     ticket.status = TicketStatus.IN_PROGRESS;
 
     await ticket.save();
+
+    // Send assignment emails
+    await sendAssignmentEmails(ticket, assignedEmployeesDetails, oldAssignments);
 
     res.json({
       message: `Ticket assigned to ${assignedEmployeesDetails.map(emp => emp.employeeName).join(', ')}`,
@@ -797,7 +1158,7 @@ app.patch("/api/tickets/:id/assign", authenticateToken, authorizeRoles(UserRole.
   }
 });
 
-// Add additional employee to ticket
+// Add additional employee to ticket with email notifications
 app.patch("/api/tickets/:id/add-employee", authenticateToken, authorizeRoles(UserRole.ADMIN), async (req, res) => {
   try {
     const { employeeId } = req.body;
@@ -830,10 +1191,14 @@ app.patch("/api/tickets/:id/add-employee", authenticateToken, authorizeRoles(Use
       });
     }
 
+    // Store old assignments
+    const oldAssignments = ticket.assignedEmployees || [];
+
     // Add employee to assignment
     const newAssignment = {
       employeeId: employee._id.toString(),
       employeeName: employee.name,
+      employeeEmail: employee.email,
       assignedAt: new Date(),
       isPrimary: false,
       department: employee.department || ticket.department
@@ -841,7 +1206,6 @@ app.patch("/api/tickets/:id/add-employee", authenticateToken, authorizeRoles(Use
 
     if (!ticket.assignedEmployees) {
       ticket.assignedEmployees = [newAssignment];
-      // If this is the first assignment, make it primary
       newAssignment.isPrimary = true;
       ticket.assignedTo = newAssignment.employeeId;
       ticket.assignedToName = newAssignment.employeeName;
@@ -851,6 +1215,9 @@ app.patch("/api/tickets/:id/add-employee", authenticateToken, authorizeRoles(Use
     }
 
     await ticket.save();
+
+    // Send employee added email
+    await sendEmployeeAddedEmail(ticket, newAssignment, oldAssignments);
 
     res.json({
       message: `Employee ${employee.name} added to ticket`,
@@ -862,7 +1229,7 @@ app.patch("/api/tickets/:id/add-employee", authenticateToken, authorizeRoles(Use
   }
 });
 
-// Remove employee from ticket
+// Remove employee from ticket with email notifications
 app.patch("/api/tickets/:id/remove-employee", authenticateToken, authorizeRoles(UserRole.ADMIN), async (req, res) => {
   try {
     const { employeeId } = req.body;
@@ -885,22 +1252,27 @@ app.patch("/api/tickets/:id/remove-employee", authenticateToken, authorizeRoles(
     }
 
     const removedEmployee = ticket.assignedEmployees[employeeIndex];
+    
+    // Store old assignments for email
+    const oldAssignments = [...ticket.assignedEmployees];
+    
     ticket.assignedEmployees.splice(employeeIndex, 1);
 
     // Update primary assignment if needed
     if (removedEmployee.isPrimary && ticket.assignedEmployees.length > 0) {
-      // Make the first remaining employee primary
       ticket.assignedEmployees[0].isPrimary = true;
       ticket.assignedTo = ticket.assignedEmployees[0].employeeId;
       ticket.assignedToName = ticket.assignedEmployees[0].employeeName;
     } else if (ticket.assignedEmployees.length === 0) {
-      // No employees left
       ticket.assignedTo = undefined;
       ticket.assignedToName = undefined;
       ticket.status = TicketStatus.OPEN;
     }
 
     await ticket.save();
+
+    // Send employee removed email
+    await sendEmployeeRemovedEmail(ticket, removedEmployee, oldAssignments);
 
     res.json({
       message: `Employee ${removedEmployee.employeeName} removed from ticket`,
@@ -910,6 +1282,426 @@ app.patch("/api/tickets/:id/remove-employee", authenticateToken, authorizeRoles(
     res.status(500).json({ message: error.message });
   }
 });
+
+// ========== EMAIL NOTIFICATION FUNCTIONS ==========
+
+// Send status update emails
+async function sendTicketStatusUpdateEmails(oldTicket: any, updatedTicket: any) {
+  try {
+    const adminUsers = await UserModel.find({ role: UserRole.ADMIN });
+    const adminEmails = adminUsers.map(admin => admin.email);
+    
+    const client = await UserModel.findById(updatedTicket.clientId);
+    const assignedEmployees = updatedTicket.assignedEmployees || [];
+
+    const statusConfig: Record<TicketStatus, { color: string; icon: string; action: string }> = {
+      [TicketStatus.OPEN]: { color: '#3182ce', icon: '🔓', action: 'reopened' },
+      [TicketStatus.IN_PROGRESS]: { color: '#ed8936', icon: '🔄', action: 'in progress' },
+      [TicketStatus.RESOLVED]: { color: '#38a169', icon: '✅', action: 'resolved' },
+      [TicketStatus.CLOSED]: { color: '#718096', icon: '🔒', action: 'closed' }
+    };
+
+    const config = statusConfig[updatedTicket.status as TicketStatus] || { color: '#718096', icon: '📝', action: 'updated' };
+
+    // Define interfaces for configuration and ticket data
+    interface StatusConfig {
+      color: string;
+      icon: string;
+      action: string;
+    }
+
+    interface AssignedEmployee {
+      employeeId: string;
+      employeeName: string;
+      employeeEmail: string;
+      assignedAt: Date;
+      isPrimary: boolean;
+      department?: string;
+    }
+
+    interface TicketData {
+      _id: string;
+      title: string;
+      ticketNumber: string;
+      status: string;
+      department: string;
+      resolvedAt?: Date;
+      closedAt?: Date;
+    }
+
+        const baseEmailHtml: string = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9fafb;">
+            <div style="background: linear-gradient(135deg, ${config.color} 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
+              <h1 style="margin: 0; font-size: 24px;">${config.icon} Ticket Status Updated</h1>
+            </div>
+            
+            <div style="background: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+              <!-- Ticket Header -->
+              <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid ${config.color};">
+                <h2 style="margin: 0 0 10px 0; color: #2d3748;">${updatedTicket.title}</h2>
+                <div style="display: flex; gap: 15px; flex-wrap: wrap; font-size: 14px;">
+                  <span><strong>Ticket #:</strong> ${updatedTicket.ticketNumber}</span>
+                  <span style="background: ${config.color}; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px;">
+                    ${updatedTicket.status.toUpperCase()}
+                  </span>
+                  <span>🏢 ${updatedTicket.department}</span>
+                </div>
+              </div>
+
+              <!-- Status Update -->
+              <div style="margin-bottom: 20px;">
+                <h3 style="color: #4a5568; margin-bottom: 10px;">📊 Status Change</h3>
+                <p style="background: #f0fff4; padding: 15px; border-radius: 6px; border-left: 3px solid ${config.color}; margin: 0;">
+                  <strong>Status changed from ${oldTicket.status} to ${updatedTicket.status}</strong>
+                  ${updatedTicket.resolvedAt ? `<br>✅ Resolved on: ${new Date(updatedTicket.resolvedAt).toLocaleString()}` : ''}
+                  ${updatedTicket.closedAt ? `<br>🔒 Closed on: ${new Date(updatedTicket.closedAt).toLocaleString()}` : ''}
+                </p>
+              </div>
+
+              <!-- Current Assignees -->
+              ${assignedEmployees.length > 0 ? `
+                <div style="margin-bottom: 20px;">
+                  <h3 style="color: #4a5568; margin-bottom: 10px;">👥 Assigned Team</h3>
+                  <p style="background: #f7fafc; padding: 12px; border-radius: 6px;">
+                    ${assignedEmployees.map((emp: AssignedEmployee) => 
+                      `<span style="display: inline-block; background: #e2e8f0; padding: 4px 8px; margin: 2px; border-radius: 4px;">${emp.employeeName}</span>`
+                    ).join('')}
+                  </p>
+                </div>
+              ` : ''}
+
+              <!-- Quick Actions -->
+              <div style="background: #edf2f7; padding: 20px; border-radius: 8px; text-align: center;">
+                <a href="${process.env.APP_URL}/tickets/${updatedTicket._id}" 
+                   style="background: ${config.color}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">
+                  📝 View Ticket Details
+                </a>
+              </div>
+            </div>
+          </div>
+        `;
+
+    const emailPromises = [];
+
+    // Send to client
+    if (client) {
+      emailPromises.push(
+        vertifitEmailService.sendEmail({
+          to: client.email,
+          subject: `${config.icon} Ticket ${updatedTicket.ticketNumber} Status Updated to ${updatedTicket.status.toUpperCase()}`,
+          html: baseEmailHtml,
+          text: `Your ticket ${updatedTicket.ticketNumber} status has been updated to ${updatedTicket.status}`
+        })
+      );
+    }
+
+    // Send to assigned employees
+    interface Employee {
+      employeeId: string;
+      employeeName: string;
+      employeeEmail: string;
+      assignedAt: Date;
+      isPrimary: boolean;
+      department?: string;
+    }
+
+    assignedEmployees.forEach((employee: Employee) => {
+      emailPromises.push(
+      vertifitEmailService.sendEmail({
+        to: employee.employeeEmail,
+        subject: `${config.icon} Ticket ${updatedTicket.ticketNumber} Status Updated to ${updatedTicket.status.toUpperCase()}`,
+        html: baseEmailHtml,
+        text: `Ticket ${updatedTicket.ticketNumber} status updated to ${updatedTicket.status}`
+      })
+      );
+    });
+
+    // Send to admins
+    if (adminEmails.length > 0) {
+      emailPromises.push(
+        vertifitEmailService.sendEmail({
+          to: adminEmails,
+          subject: `${config.icon} Ticket ${updatedTicket.ticketNumber} Status Updated to ${updatedTicket.status.toUpperCase()}`,
+          html: baseEmailHtml,
+          text: `Ticket ${updatedTicket.ticketNumber} status updated to ${updatedTicket.status}`
+        })
+      );
+    }
+
+    await Promise.allSettled(emailPromises);
+    console.log(`✅ Status update emails sent for ticket ${updatedTicket.ticketNumber}`);
+
+  } catch (error) {
+    console.error("❌ Failed to send status update emails:", error);
+  }
+}
+
+// Send assignment emails
+async function sendAssignmentEmails(ticket: any, newAssignments: any[], oldAssignments: any[]) {
+  try {
+    const adminUsers = await UserModel.find({ role: UserRole.ADMIN });
+    const adminEmails = adminUsers.map(admin => admin.email);
+    const client = await UserModel.findById(ticket.clientId);
+
+    const newlyAssigned = newAssignments.filter(newEmp => 
+      !oldAssignments.some(oldEmp => oldEmp.employeeId === newEmp.employeeId)
+    );
+
+    const assignmentEmailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9fafb;">
+        <div style="background: linear-gradient(135deg, #38a169 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
+          <h1 style="margin: 0; font-size: 24px;">👥 Ticket Assignment Update</h1>
+        </div>
+        
+        <div style="background: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <!-- Ticket Header -->
+          <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #38a169;">
+            <h2 style="margin: 0 0 10px 0; color: #2d3748;">${ticket.title}</h2>
+            <div style="display: flex; gap: 15px; flex-wrap: wrap; font-size: 14px;">
+              <span><strong>Ticket #:</strong> ${ticket.ticketNumber}</span>
+              <span style="background: #38a169; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px;">
+                ASSIGNED
+              </span>
+              <span>🏢 ${ticket.department}</span>
+            </div>
+          </div>
+
+          <!-- Assignment Details -->
+          <div style="margin-bottom: 20px;">
+            <h3 style="color: #4a5568; margin-bottom: 10px;">📋 Assignment Details</h3>
+            <p style="background: #f0fff4; padding: 15px; border-radius: 6px; border-left: 3px solid #38a169; margin: 0;">
+              <strong>Ticket has been assigned to:</strong><br>
+              ${newAssignments.map(emp => 
+                `• ${emp.employeeName} ${emp.isPrimary ? '(Primary)' : ''}`
+              ).join('<br>')}
+            </p>
+          </div>
+
+          ${newlyAssigned.length > 0 ? `
+            <div style="margin-bottom: 20px;">
+              <h3 style="color: #4a5568; margin-bottom: 10px;">🎯 New Assignments</h3>
+              <p style="background: #e6fffa; padding: 12px; border-radius: 6px;">
+                ${newlyAssigned.map(emp => 
+                  `<span style="display: inline-block; background: #38b2ac; color: white; padding: 4px 8px; margin: 2px; border-radius: 4px;">${emp.employeeName}</span>`
+                ).join('')}
+              </p>
+            </div>
+          ` : ''}
+
+          <!-- Quick Actions -->
+          <div style="background: #edf2f7; padding: 20px; border-radius: 8px; text-align: center;">
+            <a href="${process.env.APP_URL}/tickets/${ticket._id}" 
+               style="background: #38a169; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">
+              📝 View Ticket Details
+            </a>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const emailPromises = [];
+
+    // Send to newly assigned employees
+    newlyAssigned.forEach(employee => {
+      emailPromises.push(
+        vertifitEmailService.sendEmail({
+          to: employee.employeeEmail,
+          subject: `🎯 You've Been Assigned to Ticket ${ticket.ticketNumber}`,
+          html: assignmentEmailHtml,
+          text: `You have been assigned to ticket ${ticket.ticketNumber}: ${ticket.title}`
+        })
+      );
+    });
+
+    // Send to client
+    if (client) {
+      emailPromises.push(
+        vertifitEmailService.sendEmail({
+          to: client.email,
+          subject: `👥 Team Assigned to Your Ticket ${ticket.ticketNumber}`,
+          html: assignmentEmailHtml,
+          text: `A team has been assigned to your ticket ${ticket.ticketNumber}`
+        })
+      );
+    }
+
+    // Send to admins
+    if (adminEmails.length > 0) {
+      emailPromises.push(
+        vertifitEmailService.sendEmail({
+          to: adminEmails,
+          subject: `👥 Ticket ${ticket.ticketNumber} Assignment Updated`,
+          html: assignmentEmailHtml,
+          text: `Ticket ${ticket.ticketNumber} has been assigned to team members`
+        })
+      );
+    }
+
+    await Promise.allSettled(emailPromises);
+    console.log(`✅ Assignment emails sent for ticket ${ticket.ticketNumber}`);
+
+  } catch (error) {
+    console.error("❌ Failed to send assignment emails:", error);
+  }
+}
+
+// Send employee added email
+async function sendEmployeeAddedEmail(ticket: any, newEmployee: any, oldAssignments: any[]) {
+  try {
+    const adminUsers = await UserModel.find({ role: UserRole.ADMIN });
+    const adminEmails = adminUsers.map(admin => admin.email);
+    const client = await UserModel.findById(ticket.clientId);
+
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9fafb;">
+        <div style="background: linear-gradient(135deg, #4299e1 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
+          <h1 style="margin: 0; font-size: 24px;">➕ Team Member Added</h1>
+        </div>
+        
+        <div style="background: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #4299e1;">
+            <h2 style="margin: 0 0 10px 0; color: #2d3748;">${ticket.title}</h2>
+            <div style="display: flex; gap: 15px; flex-wrap: wrap; font-size: 14px;">
+              <span><strong>Ticket #:</strong> ${ticket.ticketNumber}</span>
+              <span>🏢 ${ticket.department}</span>
+            </div>
+          </div>
+
+          <div style="text-align: center; padding: 20px;">
+            <div style="background: #ebf8ff; padding: 20px; border-radius: 8px; display: inline-block;">
+              <h3 style="color: #2b6cb0; margin: 0 0 10px 0;">➕ New Team Member</h3>
+              <p style="font-size: 18px; color: #2d3748; margin: 0;">
+                <strong>${newEmployee.employeeName}</strong><br>
+                <span style="color: #718096;">has been added to the ticket</span>
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const emailPromises = [];
+
+    // Send to newly added employee
+    emailPromises.push(
+      vertifitEmailService.sendEmail({
+        to: newEmployee.employeeEmail,
+        subject: `➕ You've Been Added to Ticket ${ticket.ticketNumber}`,
+        html: emailHtml,
+        text: `You have been added to ticket ${ticket.ticketNumber}: ${ticket.title}`
+      })
+    );
+
+    // Send to client
+    if (client) {
+      emailPromises.push(
+        vertifitEmailService.sendEmail({
+          to: client.email,
+          subject: `➕ Team Member Added to Your Ticket ${ticket.ticketNumber}`,
+          html: emailHtml,
+          text: `A new team member has been added to your ticket ${ticket.ticketNumber}`
+        })
+      );
+    }
+
+    // Send to admins
+    if (adminEmails.length > 0) {
+      emailPromises.push(
+        vertifitEmailService.sendEmail({
+          to: adminEmails,
+          subject: `➕ Team Member Added to Ticket ${ticket.ticketNumber}`,
+          html: emailHtml,
+          text: `A team member has been added to ticket ${ticket.ticketNumber}`
+        })
+      );
+    }
+
+    await Promise.allSettled(emailPromises);
+    console.log(`✅ Employee added email sent for ticket ${ticket.ticketNumber}`);
+
+  } catch (error) {
+    console.error("❌ Failed to send employee added email:", error);
+  }
+}
+
+// Send employee removed email
+async function sendEmployeeRemovedEmail(ticket: any, removedEmployee: any, oldAssignments: any[]) {
+  try {
+    const adminUsers = await UserModel.find({ role: UserRole.ADMIN });
+    const adminEmails = adminUsers.map(admin => admin.email);
+    const client = await UserModel.findById(ticket.clientId);
+
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9fafb;">
+        <div style="background: linear-gradient(135deg, #e53e3e 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
+          <h1 style="margin: 0; font-size: 24px;">➖ Team Member Removed</h1>
+        </div>
+        
+        <div style="background: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #e53e3e;">
+            <h2 style="margin: 0 0 10px 0; color: #2d3748;">${ticket.title}</h2>
+            <div style="display: flex; gap: 15px; flex-wrap: wrap; font-size: 14px;">
+              <span><strong>Ticket #:</strong> ${ticket.ticketNumber}</span>
+              <span>🏢 ${ticket.department}</span>
+            </div>
+          </div>
+
+          <div style="text-align: center; padding: 20px;">
+            <div style="background: #fed7d7; padding: 20px; border-radius: 8px; display: inline-block;">
+              <h3 style="color: #c53030; margin: 0 0 10px 0;">➖ Team Member Removed</h3>
+              <p style="font-size: 18px; color: #2d3748; margin: 0;">
+                <strong>${removedEmployee.employeeName}</strong><br>
+                <span style="color: #718096;">has been removed from the ticket</span>
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const emailPromises = [];
+
+    // Send to removed employee
+    emailPromises.push(
+      vertifitEmailService.sendEmail({
+        to: removedEmployee.employeeEmail,
+        subject: `➖ You've Been Removed from Ticket ${ticket.ticketNumber}`,
+        html: emailHtml,
+        text: `You have been removed from ticket ${ticket.ticketNumber}: ${ticket.title}`
+      })
+    );
+
+    // Send to client
+    if (client) {
+      emailPromises.push(
+        vertifitEmailService.sendEmail({
+          to: client.email,
+          subject: `➖ Team Member Removed from Your Ticket ${ticket.ticketNumber}`,
+          html: emailHtml,
+          text: `A team member has been removed from your ticket ${ticket.ticketNumber}`
+        })
+      );
+    }
+
+    // Send to admins
+    if (adminEmails.length > 0) {
+      emailPromises.push(
+        vertifitEmailService.sendEmail({
+          to: adminEmails,
+          subject: `➖ Team Member Removed from Ticket ${ticket.ticketNumber}`,
+          html: emailHtml,
+          text: `A team member has been removed from ticket ${ticket.ticketNumber}`
+        })
+      );
+    }
+
+    await Promise.allSettled(emailPromises);
+    console.log(`✅ Employee removed email sent for ticket ${ticket.ticketNumber}`);
+
+  } catch (error) {
+    console.error("❌ Failed to send employee removed email:", error);
+  }
+}
  app.get("/api/tickets/:id/comments", async (req, res) => {
   try {
     const comments = await CommentModel.find({ ticketId: req.params.id })
@@ -1044,6 +1836,84 @@ app.post("/api/tickets/:id/comments", authenticateToken, async (req: AuthRequest
     }
   });
 
+  //mail service test 
+
+
+// Test Vertifit email configuration
+app.post("/api/admin/test-email", authenticateToken, authorizeRoles(UserRole.ADMIN), async (req, res) => {
+  try {
+    const { testEmail } = req.body;
+    
+    console.log('🧪 Testing Vertifit email configuration...');
+    
+    const result = await vertifitEmailService.sendTestEmail(testEmail);
+    
+    res.json({
+      success: result.success,
+      message: result.success 
+        ? 'Test email sent successfully! Check support@vertifitsolutions.com inbox.' 
+        : `Failed to send test email: ${result.error}`
+    });
+  } catch (error: any) {
+    console.error('❌ Email test error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
+  }
+});
+
+// Send welcome email to new users
+app.post("/api/admin/send-welcome-email", authenticateToken, authorizeRoles(UserRole.ADMIN), async (req, res) => {
+  try {
+    const { userId, temporaryPassword } = req.body;
+    
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
+          <h1 style="margin: 0;">Welcome to Vertifit Service Desk</h1>
+        </div>
+        <div style="background: white; padding: 30px;">
+          <h2>Hello ${user.name},</h2>
+          <p>Your ${user.role} account has been created successfully.</p>
+          
+          <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea;">
+            <h3 style="margin-top: 0;">Your Login Credentials:</h3>
+            <p><strong>Email:</strong> ${user.email}</p>
+            <p><strong>Password:</strong> ${temporaryPassword}</p>
+            <p><strong>Login URL:</strong> <a href="${process.env.APP_URL}">${process.env.APP_URL}</a></p>
+          </div>
+          
+          <p>Please log in and change your password after first login.</p>
+        </div>
+      </div>
+    `;
+
+    const success = await vertifitEmailService.sendEmail({
+      to: user.email,
+      subject: `Welcome to Vertifit Service Desk - Your ${user.role} Account`,
+      html: emailHtml,
+      text: `Welcome to Vertifit Service Desk! Your ${user.role} account has been created. Email: ${user.email}, Password: ${temporaryPassword}, Login: ${process.env.APP_URL}`
+    });
+
+    res.json({
+      success,
+      message: success 
+        ? `Welcome email sent to ${user.email}` 
+        : `Failed to send email to ${user.email}`
+    });
+  } catch (error: any) {
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
+  }
+});
   const httpServer = createServer(app);
 
   return httpServer;

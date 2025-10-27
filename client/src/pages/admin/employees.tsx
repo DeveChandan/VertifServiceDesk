@@ -879,35 +879,123 @@ function EmployeeForm({
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="department"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Department</FormLabel>
-                    <FormControl>
-                      <Input placeholder="IT Support" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="jobTitle"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Job Title</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Software Engineer" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
+      <div className="grid grid-cols-2 gap-4">
+  <FormField
+    control={form.control}
+    name="department"
+    render={({ field }) => (
+      <FormItem>
+        <FormLabel>Department *</FormLabel>
+        <Select onValueChange={field.onChange} defaultValue={field.value}>
+          <FormControl>
+            <SelectTrigger>
+              <SelectValue placeholder="Select department" />
+            </SelectTrigger>
+          </FormControl>
+          <SelectContent className="max-h-80">
+            {/* SAP Departments */}
+            <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">SAP</div>
+            <SelectItem value="SAP ABAP">SAP ABAP</SelectItem>
+            <SelectItem value="SAP BASIS">SAP BASIS</SelectItem>
+            <SelectItem value="SAP FICO">SAP FICO</SelectItem>
+            <SelectItem value="SAP MM">SAP MM</SelectItem>
+            <SelectItem value="SAP SD">SAP SD</SelectItem>
+            <SelectItem value="SAP PP">SAP PP</SelectItem>
+            <SelectItem value="SAP WM">SAP WM</SelectItem>
+            <SelectItem value="SAP PM">SAP PM</SelectItem>
+            <SelectItem value="SAP HR/HCM">SAP HR/HCM</SelectItem>
+            <SelectItem value="SAP SuccessFactors">SAP SuccessFactors</SelectItem>
+            <SelectItem value="SAP Ariba">SAP Ariba</SelectItem>
+            <SelectItem value="SAP S/4HANA">SAP S/4HANA</SelectItem>
+            <SelectItem value="SAP BW/BI">SAP BW/BI</SelectItem>
+            <SelectItem value="SAP CRM">SAP CRM</SelectItem>
+            <SelectItem value="SAP Fiori/UI5">SAP Fiori/UI5</SelectItem>
+            <SelectItem value="SAP Cloud Platform">SAP Cloud Platform</SelectItem>
+            <SelectItem value="SAP Integration">SAP Integration</SelectItem>
+            <SelectItem value="SAP Security">SAP Security</SelectItem>
+            
+            {/* UI/UX Departments */}
+            <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-2">UI/UX Design</div>
+            <SelectItem value="UI/UX Design">UI/UX Design</SelectItem>
+            <SelectItem value="Product Design">Product Design</SelectItem>
+            <SelectItem value="Interaction Design">Interaction Design</SelectItem>
+            <SelectItem value="Visual Design">Visual Design</SelectItem>
+            <SelectItem value="UX Research">UX Research</SelectItem>
+            <SelectItem value="Design Systems">Design Systems</SelectItem>
+            <SelectItem value="Mobile Design">Mobile Design</SelectItem>
+            <SelectItem value="Web Design">Web Design</SelectItem>
+            
+            {/* Full Stack Development */}
+            <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-2">Full Stack Development</div>
+            <SelectItem value="Full Stack Development">Full Stack Development</SelectItem>
+            <SelectItem value="Frontend Development">Frontend Development</SelectItem>
+            <SelectItem value="Backend Development">Backend Development</SelectItem>
+            <SelectItem value="MERN Stack">MERN Stack</SelectItem>
+            <SelectItem value="MEAN Stack">MEAN Stack</SelectItem>
+            <SelectItem value=".NET Full Stack">.NET Full Stack</SelectItem>
+            <SelectItem value="Java Full Stack">Java Full Stack</SelectItem>
+            <SelectItem value="Python Full Stack">Python Full Stack</SelectItem>
+            
+            {/* Mobile Development */}
+            <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-2">Mobile Development</div>
+            <SelectItem value="Android Development">Android Development</SelectItem>
+            <SelectItem value="iOS Development">iOS Development</SelectItem>
+            <SelectItem value="React Native">React Native</SelectItem>
+            <SelectItem value="Flutter Development">Flutter Development</SelectItem>
+            <SelectItem value="Cross-Platform Mobile">Cross-Platform Mobile</SelectItem>
+            <SelectItem value="Mobile App Development">Mobile App Development</SelectItem>
+            
+            {/* Web Development */}
+            <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-2">Web Development</div>
+            <SelectItem value="Web Development">Web Development</SelectItem>
+            <SelectItem value="Frontend Web">Frontend Web</SelectItem>
+            <SelectItem value="Backend Web">Backend Web</SelectItem>
+            <SelectItem value="JavaScript Development">JavaScript Development</SelectItem>
+            <SelectItem value="TypeScript Development">TypeScript Development</SelectItem>
+            <SelectItem value="React.js Development">React.js Development</SelectItem>
+            <SelectItem value="Vue.js Development">Vue.js Development</SelectItem>
+            <SelectItem value="Angular Development">Angular Development</SelectItem>
+            <SelectItem value="Node.js Development">Node.js Development</SelectItem>
+            
+            {/* Automation */}
+            <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-2">Automation</div>
+            <SelectItem value="Test Automation">Test Automation</SelectItem>
+            <SelectItem value="RPA (Robotic Process Automation)">RPA (Robotic Process Automation)</SelectItem>
+            <SelectItem value="DevOps Automation">DevOps Automation</SelectItem>
+            <SelectItem value="Process Automation">Process Automation</SelectItem>
+            <SelectItem value="QA Automation">QA Automation</SelectItem>
+            <SelectItem value="Infrastructure Automation">Infrastructure Automation</SelectItem>
+            
+            {/* Other IT */}
+            <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-2">Other IT</div>
+            <SelectItem value="DevOps">DevOps</SelectItem>
+            <SelectItem value="Cloud Engineering">Cloud Engineering</SelectItem>
+            <SelectItem value="Data Science">Data Science</SelectItem>
+            <SelectItem value="Machine Learning">Machine Learning</SelectItem>
+            <SelectItem value="Cyber Security">Cyber Security</SelectItem>
+            <SelectItem value="Database Administration">Database Administration</SelectItem>
+            <SelectItem value="Network Engineering">Network Engineering</SelectItem>
+            <SelectItem value="IT Support">IT Support</SelectItem>
+          </SelectContent>
+        </Select>
+        <FormMessage />
+      </FormItem>
+    )}
+  />
+  <FormField
+    control={form.control}
+    name="jobTitle"
+    render={({ field }) => (
+      <FormItem>
+        <FormLabel>Job Title *</FormLabel>
+        <FormControl>
+          <Input placeholder="e.g., Senior SAP ABAP Developer" {...field} />
+        </FormControl>
+        <FormMessage />
+      </FormItem>
+    )}
+  />
+</div>
             <FormField
               control={form.control}
               name="employeeId"

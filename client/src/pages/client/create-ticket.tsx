@@ -1,5 +1,6 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { insertTicketSchema, InsertTicket, TicketPriority, TicketCategory, TicketStatus } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +36,13 @@ interface PendingFile {
   localUrl: string;
 }
 
+// Create a new schema that includes department
+const createTicketSchema = insertTicketSchema.extend({
+  department: z.string().min(1, "Department is required"),
+});
+
+type CreateTicketFormData = z.infer<typeof createTicketSchema>;
+
 export default function CreateTicketPage() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
@@ -42,8 +50,8 @@ export default function CreateTicketPage() {
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set());
 
-  const form = useForm<InsertTicket & { department?: string }>({
-    resolver: zodResolver(insertTicketSchema),
+  const form = useForm<CreateTicketFormData>({
+    resolver: zodResolver(createTicketSchema),
     defaultValues: {
       title: "",
       description: "",
@@ -52,7 +60,7 @@ export default function CreateTicketPage() {
       status: TicketStatus.OPEN,
       clientId: user?._id || "",
       attachments: [],
-      department: user?.department || "Production",
+      department: user?.department || "", // Make sure this has a default value
     },
   });
 
@@ -63,16 +71,15 @@ export default function CreateTicketPage() {
     }
   }, [user, form]);
 
-  // Mutation for uploading files - matches your backend endpoint
+  // Mutation for uploading files
   const uploadFileMutation = useMutation({
     mutationFn: async (file: File) => {
       const formData = new FormData();
-      formData.append("file", file); // Your backend expects "file" field, not "attachments"
+      formData.append("file", file);
       
       const response = await fetch("/api/upload", {
         method: "POST",
         body: formData,
-        // Note: Your backend doesn't seem to require authentication for uploads
       });
 
       console.log("Upload response status:", response.status);
@@ -83,18 +90,18 @@ export default function CreateTicketPage() {
       }
 
       const result = await response.json();
-      return result; // Your backend returns { message: "File uploaded successfully", fileUrl: "/uploads/filename" }
+      return result;
     }
   });
 
   const createTicketMutation = useMutation({
     mutationFn: async (data: { 
-      ticketData: InsertTicket & { department?: string }; 
+      ticketData: CreateTicketFormData; 
       files: File[] 
     }) => {
       let fileUrls: string[] = [];
 
-      // Upload files first if any - one by one since your backend handles single files
+      // Upload files first if any
       if (data.files.length > 0) {
         setUploadingFiles(new Set(data.files.map(f => f.name)));
         try {
@@ -108,14 +115,20 @@ export default function CreateTicketPage() {
         }
       }
 
-      // Then create ticket - your backend expects attachments as array of URLs
+      // Create ticket with ALL form data including department
       const ticketPayload = {
-        ...data.ticketData,
-        attachments: fileUrls, // Your backend expects array of file URLs
-        department: data.ticketData.department || user?.department || "Production",
+        title: data.ticketData.title,
+        description: data.ticketData.description,
+        priority: data.ticketData.priority,
+        category: data.ticketData.category,
+        status: data.ticketData.status,
+        clientId: data.ticketData.clientId,
+        attachments: fileUrls,
+        department: data.ticketData.department, // This should now have the value
       };
 
       console.log("Creating ticket with payload:", ticketPayload);
+      console.log("Department value in payload:", data.ticketData.department);
 
       return await apiRequest("POST", "/api/tickets", ticketPayload);
     },
@@ -142,8 +155,9 @@ export default function CreateTicketPage() {
     },
   });
 
-  const onSubmit = async (data: InsertTicket & { department?: string }) => {
-    console.log("Form submitted with data:", data);
+  const onSubmit = async (data: CreateTicketFormData) => {
+    console.log("Form submitted with FULL data:", data);
+    console.log("Department value from form:", data.department);
     createTicketMutation.mutate({ 
       ticketData: data, 
       files: pendingFiles.map(f => f.file) 
@@ -359,44 +373,113 @@ export default function CreateTicketPage() {
                 />
               </div>
 
-              {/* Department Field */}
+              {/* Department Field - FIXED */}
               <FormField
                 control={form.control}
                 name="department"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Department</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormLabel>Department *</FormLabel>
+                    <Select 
+                      onValueChange={field.onChange} 
+                      defaultValue={field.value}
+                      value={field.value}
+                    >
                       <FormControl>
                         <SelectTrigger data-testid="select-department">
                           <SelectValue placeholder="Select department" />
                         </SelectTrigger>
                       </FormControl>
-                      <SelectContent>
-                        {[
-                          "Production",
-                          "Maintenance",
-                          "Quality",
-                          "Store",
-                          "HR",
-                          "Finance",
-                          "Dispatch",
-                        ].map((dept) => (
-                          <SelectItem key={dept} value={dept}>
-                            <div className="flex items-center gap-2">
-                              <Building className="h-4 w-4" />
-                              {dept}
-                              {dept === user?.department && " (Your Department)"}
-                            </div>
-                          </SelectItem>
-                        ))}
+                      <SelectContent className="max-h-80">
+                        {/* Business Departments */}
+                        
+                        {/* SAP Departments */}
+                        <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-2">SAP</div>
+                        <SelectItem value="SAP ABAP">SAP ABAP</SelectItem>
+                        <SelectItem value="SAP BASIS">SAP BASIS</SelectItem>
+                        <SelectItem value="SAP FICO">SAP FICO</SelectItem>
+                        <SelectItem value="SAP MM">SAP MM</SelectItem>
+                        <SelectItem value="SAP SD">SAP SD</SelectItem>
+                        <SelectItem value="SAP PP">SAP PP</SelectItem>
+                        <SelectItem value="SAP WM">SAP WM</SelectItem>
+                        <SelectItem value="SAP PM">SAP PM</SelectItem>
+                        <SelectItem value="SAP HR/HCM">SAP HR/HCM</SelectItem>
+                        <SelectItem value="SAP SuccessFactors">SAP SuccessFactors</SelectItem>
+                        <SelectItem value="SAP Ariba">SAP Ariba</SelectItem>
+                        <SelectItem value="SAP S/4HANA">SAP S/4HANA</SelectItem>
+                        <SelectItem value="SAP BW/BI">SAP BW/BI</SelectItem>
+                        <SelectItem value="SAP CRM">SAP CRM</SelectItem>
+                        <SelectItem value="SAP Fiori/UI5">SAP Fiori/UI5</SelectItem>
+                        <SelectItem value="SAP Cloud Platform">SAP Cloud Platform</SelectItem>
+                        <SelectItem value="SAP Integration">SAP Integration</SelectItem>
+                        <SelectItem value="SAP Security">SAP Security</SelectItem>
+                        
+                        {/* UI/UX Departments */}
+                        <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-2">UI/UX Design</div>
+                        <SelectItem value="UI/UX Design">UI/UX Design</SelectItem>
+                        <SelectItem value="Product Design">Product Design</SelectItem>
+                        <SelectItem value="Interaction Design">Interaction Design</SelectItem>
+                        <SelectItem value="Visual Design">Visual Design</SelectItem>
+                        <SelectItem value="UX Research">UX Research</SelectItem>
+                        <SelectItem value="Design Systems">Design Systems</SelectItem>
+                        <SelectItem value="Mobile Design">Mobile Design</SelectItem>
+                        <SelectItem value="Web Design">Web Design</SelectItem>
+                        
+                        {/* Full Stack Development */}
+                        <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-2">Full Stack Development</div>
+                        <SelectItem value="Full Stack Development">Full Stack Development</SelectItem>
+                        <SelectItem value="Frontend Development">Frontend Development</SelectItem>
+                        <SelectItem value="Backend Development">Backend Development</SelectItem>
+                        <SelectItem value="MERN Stack">MERN Stack</SelectItem>
+                        <SelectItem value="MEAN Stack">MEAN Stack</SelectItem>
+                        <SelectItem value=".NET Full Stack">.NET Full Stack</SelectItem>
+                        <SelectItem value="Java Full Stack">Java Full Stack</SelectItem>
+                        <SelectItem value="Python Full Stack">Python Full Stack</SelectItem>
+                        
+                        {/* Mobile Development */}
+                        <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-2">Mobile Development</div>
+                        <SelectItem value="Android Development">Android Development</SelectItem>
+                        <SelectItem value="iOS Development">iOS Development</SelectItem>
+                        <SelectItem value="React Native">React Native</SelectItem>
+                        <SelectItem value="Flutter Development">Flutter Development</SelectItem>
+                        <SelectItem value="Cross-Platform Mobile">Cross-Platform Mobile</SelectItem>
+                        <SelectItem value="Mobile App Development">Mobile App Development</SelectItem>
+                        
+                        {/* Web Development */}
+                        <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-2">Web Development</div>
+                        <SelectItem value="Web Development">Web Development</SelectItem>
+                        <SelectItem value="Frontend Web">Frontend Web</SelectItem>
+                        <SelectItem value="Backend Web">Backend Web</SelectItem>
+                        <SelectItem value="JavaScript Development">JavaScript Development</SelectItem>
+                        <SelectItem value="TypeScript Development">TypeScript Development</SelectItem>
+                        <SelectItem value="React.js Development">React.js Development</SelectItem>
+                        <SelectItem value="Vue.js Development">Vue.js Development</SelectItem>
+                        <SelectItem value="Angular Development">Angular Development</SelectItem>
+                        <SelectItem value="Node.js Development">Node.js Development</SelectItem>
+                        
+                        {/* Automation */}
+                        <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-2">Automation</div>
+                        <SelectItem value="Test Automation">Test Automation</SelectItem>
+                        <SelectItem value="RPA (Robotic Process Automation)">RPA (Robotic Process Automation)</SelectItem>
+                        <SelectItem value="DevOps Automation">DevOps Automation</SelectItem>
+                        <SelectItem value="Process Automation">Process Automation</SelectItem>
+                        <SelectItem value="QA Automation">QA Automation</SelectItem>
+                        <SelectItem value="Infrastructure Automation">Infrastructure Automation</SelectItem>
+                        
+                        {/* Other IT */}
+                        <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-2">Other IT</div>
+                        <SelectItem value="DevOps">DevOps</SelectItem>
+                        <SelectItem value="Cloud Engineering">Cloud Engineering</SelectItem>
+                        <SelectItem value="Data Science">Data Science</SelectItem>
+                        <SelectItem value="Machine Learning">Machine Learning</SelectItem>
+                        <SelectItem value="Cyber Security">Cyber Security</SelectItem>
+                        <SelectItem value="Database Administration">Database Administration</SelectItem>
+                        <SelectItem value="Network Engineering">Network Engineering</SelectItem>
+                        <SelectItem value="IT Support">IT Support</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormDescription>
-                      {user?.department 
-                        ? `Your department is ${user.department}. You can change it if needed.`
-                        : "Select the department this ticket relates to."
-                      }
+                      Select the department for this employee
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
