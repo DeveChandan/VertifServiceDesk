@@ -27,6 +27,7 @@ import TicketDetailPage from "@/pages/ticket-detail";
 import NotFound from "@/pages/not-found";
 import { UserManagement } from "./pages/admin/users";
 import ProfilePage from "./pages/ProfilePage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 
 // Extend Window interface for VANTA
 declare global {
@@ -197,7 +198,7 @@ function Router() {
       <Route path="/" component={HomeRedirect} />
       <Route path="/login" component={LoginPage} />
       <Route path="/register" component={RegisterPage} />
-
+<Route path="/reset-password" component={ResetPasswordPage} />
       {/* All authenticated routes will now have VANTA background */}
       <Route path="/client/dashboard">
         {isAuthenticated ? (

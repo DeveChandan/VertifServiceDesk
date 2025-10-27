@@ -1,12 +1,13 @@
 import express, { type Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import bcrypt from "bcryptjs";
+import crypto from 'crypto';
 import { UserModel } from "./models/user.model";
 import { TicketModel } from "./models/ticket.model";
 import { CommentModel } from "./models/comment.model";
 import { authenticateToken, authorizeRoles, generateToken, AuthRequest } from "./middleware/auth";
 import { UserRole, TicketStatus, TicketPriority } from "@shared/schema";
-import { vertifitEmailService } from '../client/src/lib/vertifitEmail'; // Adjust path as needed
+import { vertifitEmailService } from './email';
 import { connectDB } from "./db";
 //new add upload logic
 import multer from 'multer';
@@ -152,6 +153,243 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
+
+app.post("/api/auth/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const user = await UserModel.findOne({ email, isActive: true });
+    
+    // Always return success to prevent email enumeration
+    const responseMessage = "If an account with that email exists, a password reset link has been sent";
+
+    if (!user) {
+      return res.json({ message: responseMessage });
+    }
+
+    // Generate secure reset token
+    let resetToken;
+    try {
+      resetToken = crypto.randomBytes(32).toString('hex');
+    } catch (cryptoError) {
+      // Fallback if crypto fails
+      resetToken = Array.from({ length: 64 }, () => 
+        Math.floor(Math.random() * 16).toString(16)
+      ).join('');
+    }
+
+    const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    console.log('Generated reset token:', resetToken);
+    console.log('Token expiry:', resetTokenExpiry);
+
+    // FIX: Use findByIdAndUpdate to ensure the token is saved properly
+    const updatedUser = await UserModel.findByIdAndUpdate(
+      user._id,
+      {
+        resetToken: resetToken,
+        resetTokenExpiry: resetTokenExpiry
+      },
+      { new: true } // Return the updated document
+    );
+
+    // Verify the token was saved
+    if (updatedUser) {
+      console.log('Token saved to user:', updatedUser.resetToken);
+      console.log('Expiry saved:', updatedUser.resetTokenExpiry);
+    } else {
+      console.error('Failed to update user with reset token');
+    }
+
+    const resetUrl = `${process.env.APP_URL || 'http://localhost:5000'}/reset-password?token=${resetToken}`;
+
+    console.log(`Password reset link for ${user.email}: ${resetUrl}`);
+
+    // Send email (if email service is configured)
+    try {
+      if (vertifitEmailService && typeof vertifitEmailService.sendEmail === 'function') {
+        await vertifitEmailService.sendEmail({
+          to: user.email,
+          subject: "🔐 Reset Your Password - Vertifit Service Desk",
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2>Password Reset Request</h2>
+              <p>Hello ${user.name},</p>
+              <p>Click the link below to reset your password:</p>
+              <a href="${resetUrl}" style="background: #667eea; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                Reset Password
+              </a>
+              <p><small>This link expires in 1 hour.</small></p>
+              <p><small>If you didn't request this, please ignore this email.</small></p>
+            </div>
+          `,
+          text: `Reset your password: ${resetUrl}`
+        });
+        console.log(`Reset email sent to ${user.email}`);
+      } else {
+        console.log('EMAIL SERVICE NOT AVAILABLE - Reset URL:', resetUrl);
+      }
+    } catch (emailError) {
+      console.error('Email sending failed:', emailError);
+      // Don't fail the request if email fails
+    }
+
+    res.json({ message: responseMessage });
+    
+  } catch (error: any) {
+    console.error("Forgot password error:", error);
+    res.status(500).json({ message: "Failed to process password reset request" });
+  }
+});
+// Reset Password - Validate token and set new password
+app.post("/api/auth/reset-password", async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    console.log('Reset password request received. Token:', token ? 'Present' : 'Missing');
+    console.log('New password length:', newPassword?.length);
+
+    if (!token || !newPassword) {
+      return res.status(400).json({ 
+        message: "Reset token and new password are required" 
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ 
+        message: "Password must be at least 6 characters long" 
+      });
+    }
+
+    // Debug: Check what tokens exist in the database
+    const currentTime = new Date();
+    console.log('Current time:', currentTime);
+    
+    // Find user with valid reset token
+    const user = await UserModel.findOne({
+      resetToken: token,
+      resetTokenExpiry: { $gt: currentTime },
+      isActive: true
+    });
+
+    console.log('User found with valid token:', user ? 'Yes' : 'No');
+    
+    if (user) {
+      console.log('User details:', {
+        name: user.name,
+        email: user.email,
+        resetToken: user.resetToken,
+        resetTokenExpiry: user.resetTokenExpiry
+      });
+    } else {
+      // Debug: Check if token exists but expired
+      const expiredUser = await UserModel.findOne({
+        resetToken: token,
+        isActive: true
+      });
+      
+      if (expiredUser) {
+        console.log('Token exists but expired. Expiry:', expiredUser.resetTokenExpiry);
+        console.log('Current time:', currentTime);
+        console.log('Is expired?', expiredUser.resetTokenExpiry < currentTime);
+      } else {
+        console.log('No user found with this token at all');
+        
+        // Debug: List all users with reset tokens
+        const usersWithTokens = await UserModel.find({
+          resetToken: { $exists: true, $ne: null }
+        }, 'email resetToken resetTokenExpiry');
+        
+        console.log('All users with reset tokens:', usersWithTokens);
+      }
+    }
+
+    if (!user) {
+      return res.status(400).json({ 
+        message: "Invalid or expired reset token. Please request a new password reset." 
+      });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update user password and clear reset token using findByIdAndUpdate
+    await UserModel.findByIdAndUpdate(
+      user._id,
+      {
+        password: hashedPassword,
+        resetToken: null,
+        resetTokenExpiry: null,
+        lastPasswordChange: new Date()
+      }
+    );
+
+    console.log('Password successfully reset for user:', user.email);
+
+    // Send confirmation email
+    try {
+      if (vertifitEmailService && typeof vertifitEmailService.sendEmail === 'function') {
+        const emailHtml = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9fafb;">
+            <div style="background: linear-gradient(135deg, #38a169 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
+              <h1 style="margin: 0; font-size: 24px;">✅ Password Updated Successfully</h1>
+            </div>
+            
+            <div style="background: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+              <h2 style="color: #2d3748; margin-bottom: 20px;">Hello ${user.name},</h2>
+              
+              <div style="background: #f0fff4; padding: 20px; border-radius: 8px; border-left: 4px solid #38a169; margin-bottom: 20px;">
+                <p style="color: #2d3748; margin: 0;">
+                  <strong>Your password has been successfully updated.</strong><br>
+                  You can now log in to your Vertifit Service Desk account with your new password.
+                </p>
+              </div>
+
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${process.env.APP_URL || 'http://localhost:5000'}/login" 
+                   style="background: #38a169; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold; font-size: 16px;">
+                  🚀 Log In Now
+                </a>
+              </div>
+
+              <div style="background: #fed7d7; padding: 15px; border-radius: 6px; border-left: 4px solid #e53e3e;">
+                <p style="color: #744210; margin: 0; font-size: 14px;">
+                  <strong>Security Tip:</strong> If you didn't make this change, please contact support immediately.
+                </p>
+              </div>
+            </div>
+            
+            <div style="text-align: center; padding: 20px; color: #718096; font-size: 12px;">
+              <p>This is an automated message from Vertifit Service Desk</p>
+            </div>
+          </div>
+        `;
+
+        await vertifitEmailService.sendEmail({
+          to: user.email,
+          subject: "✅ Your Vertifit Service Desk Password Has Been Updated",
+          html: emailHtml,
+          text: "Your password has been successfully updated. You can now log in with your new password."
+        });
+        console.log('Confirmation email sent to:', user.email);
+      }
+    } catch (emailError) {
+      console.error('Failed to send confirmation email:', emailError);
+      // Don't fail the reset if email fails
+    }
+
+    res.json({ 
+      message: "Password has been reset successfully. You can now log in with your new password." 
+    });
+  } catch (error: any) {
+    console.error("Reset password error:", error);
+    res.status(500).json({ message: "Failed to reset password" });
+  }
+});
 // Get current user profile
 app.get("/api/users/me", authenticateToken, async (req: AuthRequest, res) => {
   try {

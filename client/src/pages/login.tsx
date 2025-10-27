@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -20,11 +20,20 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { AuthResponse } from "@shared/schema";
+import { Loader2, Mail } from "lucide-react";
 
 // Extend Window interface for VANTA
 declare global {
@@ -39,6 +48,8 @@ export default function LoginPage() {
   const { toast } = useToast();
   const vantaRef = useRef<HTMLDivElement>(null);
   const vantaEffect = useRef<any>(null);
+  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
 
   // Initialize the form
   const form = useForm<LoginCredentials>({
@@ -78,9 +89,45 @@ export default function LoginPage() {
     },
   });
 
+  // Forgot password mutation
+  const forgotPasswordMutation = useMutation({
+    mutationFn: async (email: string) => {
+      return await apiRequest("POST", "/api/auth/forgot-password", { email });
+    },
+    onSuccess: (data) => {
+      setForgotPasswordOpen(false);
+      setResetEmail("");
+      toast({
+        title: "Reset mail sent",
+        description: data.message || "Check your mail for password reset instructions.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to send reset mail",
+        description: error.message || "Please try again later.",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Handle submit
   const onSubmit = (data: LoginCredentials) => {
     loginMutation.mutate(data);
+  };
+
+  // Handle forgot password
+  const handleForgotPassword = () => {
+    if (!resetEmail) {
+      toast({
+        title: "Mail required",
+        description: "Please enter your Mail address.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    forgotPasswordMutation.mutate(resetEmail);
   };
 
   // VANTA birds animation setup
@@ -199,7 +246,7 @@ export default function LoginPage() {
         <Card className="bg-background/95 backdrop-blur-md shadow-2xl border-0">
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl font-bold text-center">
-            Vertif ServiceDesk Login
+              Vertif ServiceDesk Login
             </CardTitle>
             <CardDescription className="text-center">
               Sign in to your account to continue
@@ -213,10 +260,10 @@ export default function LoginPage() {
                   name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-foreground">Email</FormLabel>
+                      <FormLabel className="text-foreground">Mail</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="your@email.com"
+                          placeholder="your@mail.com"
                           type="email"
                           data-testid="input-email"
                           className="bg-background/80 border-border"
@@ -257,15 +304,63 @@ export default function LoginPage() {
               </form>
             </Form>
 
-            <div className="mt-4 text-center">
-              <Button
-                variant="link"
-                onClick={() => setLocation("/register")}
-                data-testid="link-register"
-                className="text-primary hover:text-primary/80"
-              >
-                Don't have an account? Register
-              </Button>
+            <div className="mt-4 text-center space-y-2">
+              <Dialog open={forgotPasswordOpen} onOpenChange={setForgotPasswordOpen}>
+                <DialogTrigger asChild>
+                  <Button
+                    variant="link"
+                    className="text-primary hover:text-primary/80 text-sm"
+                  >
+                    Forgot your password?
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                      <Mail className="h-5 w-5" />
+                      Reset Your Password
+                    </DialogTitle>
+                    <DialogDescription>
+                      Enter your email address and we'll send you a link to reset your password.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <Input
+                      placeholder="your@mail.com"
+                      type="email"
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                      className="w-full"
+                    />
+                    <Button
+                      onClick={handleForgotPassword}
+                      disabled={forgotPasswordMutation.isPending}
+                      className="w-full"
+                    >
+                      {forgotPasswordMutation.isPending ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          Sending reset link...
+                        </>
+                      ) : (
+                        "Send Reset Link"
+                      )}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+              {/*
+              <div>
+                <Button
+                  variant="link"
+                  onClick={() => setLocation("/register")}
+                  data-testid="link-register"
+                  className="text-primary hover:text-primary/80"
+                >
+                  Don't have an account? Register
+                </Button>
+              </div>
+              */}
             </div>
           </CardContent>
         </Card>

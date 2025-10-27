@@ -26,6 +26,12 @@ export interface IUser extends Document {
     relationship: string;
     phone: string;
   };
+  
+  // ✅ Password reset fields - CORRECTLY DEFINED IN INTERFACE
+  resetToken?: string;
+  resetTokenExpiry?: Date;
+  lastPasswordChange?: Date;
+  
   employmentDetails?: {
     hireDate: Date;
     employmentType: "full-time" | "part-time" | "contract";
@@ -74,7 +80,7 @@ const userSchema = new Schema<IUser>(
     email: { 
       type: String, 
       required: true, 
-      unique: true, // This creates an index automatically
+      unique: true,
       lowercase: true,
       trim: true
     },
@@ -109,7 +115,7 @@ const userSchema = new Schema<IUser>(
     },
     employeeId: { 
       type: String,
-      unique: true, // This creates an index automatically
+      unique: true,
       sparse: true
     },
     dateOfBirth: { 
@@ -127,6 +133,18 @@ const userSchema = new Schema<IUser>(
       relationship: { type: String, trim: true },
       phone: { type: String, trim: true }
     },
+    
+    // ✅ ADD THESE FIELDS TO THE MONGOOSE SCHEMA - THIS IS WHAT'S MISSING!
+    resetToken: { 
+      type: String 
+    },
+    resetTokenExpiry: { 
+      type: Date 
+    },
+    lastPasswordChange: { 
+      type: Date 
+    },
+    
     employmentDetails: {
       hireDate: { type: Date },
       employmentType: { 
@@ -152,7 +170,7 @@ const userSchema = new Schema<IUser>(
     },
     clientId: { 
       type: String,
-      unique: true, // This creates an index automatically
+      unique: true,
       sparse: true
     },
     contactPerson: { 
@@ -192,6 +210,7 @@ const userSchema = new Schema<IUser>(
     toJSON: {
       transform: function(doc, ret) {
         delete ret.password;
+        delete ret.resetToken; // Don't expose reset token in JSON responses
         return ret;
       }
     }
@@ -228,8 +247,12 @@ userSchema.pre('save', function(next) {
   next();
 });
 
+// Add indexes for reset token fields for better query performance
+userSchema.index({ resetToken: 1 });
+userSchema.index({ resetTokenExpiry: 1 });
+userSchema.index({ isActive: 1, resetTokenExpiry: 1 });
+
 // Only define indexes for fields that don't have 'unique: true'
-// Remove the duplicate index definitions for email, employeeId, and clientId
 userSchema.index({ role: 1 });
 userSchema.index({ isActive: 1 });
 userSchema.index({ department: 1 });
@@ -241,6 +264,15 @@ userSchema.index({ role: 1, isActive: 1 });
 userSchema.index({ department: 1, isActive: 1 });
 userSchema.index({ "employmentDetails.employmentType": 1, isActive: 1 });
 userSchema.index({ clientType: 1, isActive: 1 });
+
+// Static method to find by reset token
+userSchema.statics.findByResetToken = function(token: string) {
+  return this.findOne({ 
+    resetToken: token,
+    resetTokenExpiry: { $gt: new Date() },
+    isActive: true 
+  });
+};
 
 // Static method to find employees
 userSchema.statics.findEmployees = function() {
@@ -266,7 +298,25 @@ userSchema.statics.findByEmail = function(email: string) {
 userSchema.methods.getProfile = function() {
   const userObject = this.toObject();
   delete userObject.password;
+  delete userObject.resetToken;
+  delete userObject.resetTokenExpiry;
   return userObject;
+};
+
+// Instance method to set reset token
+userSchema.methods.setResetToken = function() {
+  const crypto = require('crypto');
+  this.resetToken = crypto.randomBytes(32).toString('hex');
+  this.resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+  return this.save();
+};
+
+// Instance method to clear reset token
+userSchema.methods.clearResetToken = function() {
+  this.resetToken = undefined;
+  this.resetTokenExpiry = undefined;
+  this.lastPasswordChange = new Date();
+  return this.save();
 };
 
 // Virtual for full address
