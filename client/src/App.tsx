@@ -28,6 +28,11 @@ import NotFound from "@/pages/not-found";
 import { UserManagement } from "./pages/admin/users";
 import ProfilePage from "./pages/ProfilePage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
+import { ClientUserCreate } from "./pages/client/ClientUserCreate";
+import ClientUserCreateTicketPage from "./pages/clientUser/create-ticket";
+import ClientUserDashboard from "./pages/clientUser/dashboard";
+import ClientUserManagement from "./pages/client/clientUserManagement";
+import ClientUserTickets from "./pages/client/clientUserTickets";
 
 // Extend Window interface for VANTA
 declare global {
@@ -185,8 +190,10 @@ function HomeRedirect() {
     return <Redirect to="/admin/dashboard" />;
   } else if (user?.role === UserRole.EMPLOYEE) {
     return <Redirect to="/employee/dashboard" />;
-  } else {
+  } else if (user?.role=== UserRole.CLIENT) {
     return <Redirect to="/client/dashboard" />;
+  } else {
+    return <Redirect to="/clientUser/dashboard" />;
   }
 }
 
@@ -200,6 +207,66 @@ function Router() {
       <Route path="/register" component={RegisterPage} />
 <Route path="/reset-password" component={ResetPasswordPage} />
       {/* All authenticated routes will now have VANTA background */}
+{/*new logic for clientuser routes*/}
+
+ <Route path="/clientUser/dashboard">
+        {isAuthenticated ? (
+          <AuthenticatedLayout>
+            <ProtectedRoute allowedRoles={[UserRole.CLIENT_USER]}>
+              <ClientUserDashboard />
+            </ProtectedRoute>
+          </AuthenticatedLayout>
+        ) : (
+          <Redirect to="/login" />
+        )}
+      </Route>
+
+<Route path="/clientUser/create-ticket">
+        {isAuthenticated ? (
+          <AuthenticatedLayout>
+            <ProtectedRoute allowedRoles={[UserRole.CLIENT_USER]}>
+              <ClientUserCreateTicketPage />
+            </ProtectedRoute>
+          </AuthenticatedLayout>
+        ) : (
+          <Redirect to="/login" />
+        )}
+      </Route>
+      <Route path="/clientUser/tickets">
+        {isAuthenticated ? (
+          <AuthenticatedLayout>
+            <ProtectedRoute allowedRoles={[UserRole.CLIENT_USER]}>
+              <ClientUserDashboard />
+            </ProtectedRoute>
+          </AuthenticatedLayout>
+        ) : (
+          <Redirect to="/login" />
+        )}
+      </Route>
+
+      <Route path="/clientUser/tickets/:id">
+        {isAuthenticated ? (
+          <AuthenticatedLayout>
+            <ProtectedRoute allowedRoles={[UserRole.CLIENT_USER]}>
+              <TicketDetailPage />
+            </ProtectedRoute>
+          </AuthenticatedLayout>
+        ) : (
+          <Redirect to="/login" />
+        )}
+      </Route>
+
+      <Route path="/clientUser/profile">
+        {isAuthenticated ? (
+          <AuthenticatedLayout>
+            <ProtectedRoute allowedRoles={[UserRole.CLIENT_USER]}>
+              <ProfilePage />
+            </ProtectedRoute>
+          </AuthenticatedLayout>
+        ) : (
+          <Redirect to="/login" />
+        )}
+      </Route>
       <Route path="/client/dashboard">
         {isAuthenticated ? (
           <AuthenticatedLayout>
@@ -211,7 +278,28 @@ function Router() {
           <Redirect to="/login" />
         )}
       </Route>
-
+ <Route path="/client/clientUserManagement">
+        {isAuthenticated ? (
+          <AuthenticatedLayout>
+            <ProtectedRoute allowedRoles={[UserRole.CLIENT]}>
+              <ClientUserManagement />
+            </ProtectedRoute>
+          </AuthenticatedLayout>
+        ) : (
+          <Redirect to="/login" />
+        )}
+      </Route>
+      <Route path="/client/clientUserTickets/:userId">
+        {isAuthenticated ? (
+          <AuthenticatedLayout>
+            <ProtectedRoute allowedRoles={[UserRole.CLIENT]}>
+              <ClientUserTickets />
+            </ProtectedRoute>
+          </AuthenticatedLayout>
+        ) : (
+          <Redirect to="/login" />
+        )}
+      </Route>
       <Route path="/client/create-ticket">
         {isAuthenticated ? (
           <AuthenticatedLayout>
@@ -223,7 +311,17 @@ function Router() {
           <Redirect to="/login" />
         )}
       </Route>
-
+ <Route path="/client/create-user">
+        {isAuthenticated ? (
+          <AuthenticatedLayout>
+            <ProtectedRoute allowedRoles={[UserRole.CLIENT]}>
+              <ClientUserCreate />
+            </ProtectedRoute>
+          </AuthenticatedLayout>
+        ) : (
+          <Redirect to="/login" />
+        )}
+      </Route>
       <Route path="/client/tickets">
         {isAuthenticated ? (
           <AuthenticatedLayout>
@@ -386,6 +484,18 @@ function Router() {
             <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
               <AnalyticsPage />
             </ProtectedRoute>
+          </AuthenticatedLayout>
+        ) : (
+          <Redirect to="/login" />
+        )}
+      </Route>
+
+      {/* Generic Ticket Detail Page - accessible by all authenticated roles with proper backend authorization */}
+      <Route path="/ticket-detail/:id">
+        {isAuthenticated ? (
+          <AuthenticatedLayout>
+            {/* No specific role check here, as TicketDetailPage handles internal authorization */}
+            <TicketDetailPage />
           </AuthenticatedLayout>
         ) : (
           <Redirect to="/login" />

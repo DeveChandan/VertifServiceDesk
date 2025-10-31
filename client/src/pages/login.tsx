@@ -76,8 +76,12 @@ export default function LoginPage() {
         setLocation("/admin/dashboard");
       } else if (data.user.role === UserRole.EMPLOYEE) {
         setLocation("/employee/dashboard");
-      } else {
+      } else if (data.user.role === UserRole.CLIENT) {
         setLocation("/client/dashboard");
+      } else if (data.user.role === UserRole.CLIENT_USER) {
+        setLocation("/clientUser/dashboard");
+      } else {
+        setLocation("/");
       }
     },
     onError: (error: any) => {

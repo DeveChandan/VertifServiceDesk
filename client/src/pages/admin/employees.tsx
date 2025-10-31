@@ -407,7 +407,7 @@ export default function EmployeesPage() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-semibold">Employees</h1>
+          <h1 className="text-3xl text-white font-semibold">Employees</h1>
           <p className="text-muted-foreground mt-1">
             Manage employee accounts and assignments
           </p>

@@ -7,7 +7,7 @@ import { Plus, Ticket as TicketIcon, CheckCircle2, Clock, XCircle } from "lucide
 import { StatusBadge, PriorityBadge } from "@/components/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
-export default function ClientDashboard() {
+export default function ClientUserDashboard() {
   const [, setLocation] = useLocation();
 
   const { data: tickets, isLoading } = useQuery<Ticket[]>({
@@ -32,7 +32,7 @@ export default function ClientDashboard() {
             Manage and track your support tickets
           </p>
         </div>
-        <Button onClick={() => setLocation("/client/create-ticket")} data-testid="button-create-ticket">
+        <Button onClick={() => setLocation("/clientUser/create-ticket")} data-testid="button-create-ticket">
           <Plus className="h-4 w-4 mr-2" />
           Create Ticket
         </Button>
@@ -105,7 +105,7 @@ export default function ClientDashboard() {
                 <div
                   key={ticket._id}
                   className="flex items-center justify-between p-4 border rounded-lg hover-elevate cursor-pointer"
-                  onClick={() => setLocation(`/client/tickets/${ticket._id}`)}
+                  onClick={() => setLocation(`/clientUser/tickets/${ticket._id}`)}
                   data-testid={`ticket-${ticket._id}`}
                 >
                   <div className="flex-1 min-w-0">
@@ -131,7 +131,7 @@ export default function ClientDashboard() {
               <p className="text-muted-foreground mb-4">
                 Create your first support ticket to get started
               </p>
-              <Button onClick={() => setLocation("/client/create-ticket")}>
+              <Button onClick={() => setLocation("/clientUser/create-ticket")}>
                 <Plus className="h-4 w-4 mr-2" />
                 Create Ticket
               </Button>

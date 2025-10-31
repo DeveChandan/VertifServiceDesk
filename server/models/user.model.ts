@@ -14,6 +14,13 @@ export interface IUser extends Document {
   jobTitle?: string;
   employeeId?: string;
   dateOfBirth?: Date;
+  
+  // ✅ Company code only for clients and client users (multi-tenant)
+  companyCode?: string;
+  
+  // ✅ For ClientUsers: reference to the client who created them
+  createdByClient?: string;
+  
   address?: {
     street: string;
     city: string;
@@ -27,7 +34,7 @@ export interface IUser extends Document {
     phone: string;
   };
   
-  // ✅ Password reset fields - CORRECTLY DEFINED IN INTERFACE
+  // Password reset fields
   resetToken?: string;
   resetTokenExpiry?: Date;
   lastPasswordChange?: Date;
@@ -38,6 +45,7 @@ export interface IUser extends Document {
     salary?: number;
     reportsTo?: string;
   };
+  
   // Client-specific fields
   company?: string;
   industry?: string;
@@ -64,6 +72,14 @@ export interface IUser extends Document {
     paymentTerms?: string;
     accountManager?: string;
   };
+  
+  // Client User specific fields
+  clientUserDetails?: {
+    permissions: string[];
+    accessLevel: "basic" | "standard" | "admin";
+    isPrimaryContact?: boolean;
+  };
+  
   isActive: boolean;
   lastLoginAt?: Date;
   createdAt: Date;
@@ -80,7 +96,6 @@ const userSchema = new Schema<IUser>(
     email: { 
       type: String, 
       required: true, 
-      unique: true,
       lowercase: true,
       trim: true
     },
@@ -115,9 +130,23 @@ const userSchema = new Schema<IUser>(
     },
     employeeId: { 
       type: String,
-      unique: true,
       sparse: true
     },
+    
+    // ✅ COMPANY CODE ONLY FOR CLIENTS AND CLIENT USERS
+    companyCode: {
+      type: String,
+      index: true,
+      sparse: true // Allows null values for non-client roles
+    },
+    
+    // ✅ CLIENT USER CREATOR REFERENCE
+    createdByClient: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      sparse: true
+    },
+    
     dateOfBirth: { 
       type: Date 
     },
@@ -134,7 +163,7 @@ const userSchema = new Schema<IUser>(
       phone: { type: String, trim: true }
     },
     
-    // ✅ ADD THESE FIELDS TO THE MONGOOSE SCHEMA - THIS IS WHAT'S MISSING!
+    // Password reset fields
     resetToken: { 
       type: String 
     },
@@ -154,6 +183,7 @@ const userSchema = new Schema<IUser>(
       salary: { type: Number },
       reportsTo: { type: String, trim: true }
     },
+    
     // Client-specific fields
     company: { 
       type: String,
@@ -170,7 +200,6 @@ const userSchema = new Schema<IUser>(
     },
     clientId: { 
       type: String,
-      unique: true,
       sparse: true
     },
     contactPerson: { 
@@ -197,6 +226,21 @@ const userSchema = new Schema<IUser>(
       paymentTerms: { type: String, trim: true },
       accountManager: { type: String, trim: true }
     },
+    
+    // CLIENT USER SPECIFIC FIELDS
+    clientUserDetails: {
+      permissions: [{ type: String }],
+      accessLevel: {
+        type: String,
+        enum: ["basic", "standard", "admin"],
+        default: "basic"
+      },
+      isPrimaryContact: {
+        type: Boolean,
+        default: false
+      }
+    },
+    
     isActive: { 
       type: Boolean, 
       default: true 
@@ -209,15 +253,29 @@ const userSchema = new Schema<IUser>(
     timestamps: true,
     toJSON: {
       transform: function(doc, ret) {
-        delete ret.password;
-        delete ret.resetToken; // Don't expose reset token in JSON responses
+        delete (ret as any).password;
+        delete (ret as any).resetToken;
         return ret;
       }
     }
   }
 );
 
-// Generate employee ID or client ID before saving
+// ✅ Compound unique indexes for multi-tenancy (only for client roles)
+userSchema.index({ email: 1, companyCode: 1 }, { 
+  unique: true, 
+  sparse: true, // Only applies when companyCode exists
+  partialFilterExpression: { companyCode: { $exists: true } }
+});
+
+userSchema.index({ employeeId: 1, companyCode: 1 }, { 
+  unique: true, 
+  sparse: true 
+});
+
+userSchema.index({ clientId: 1, companyCode: 1 }, { unique: true, partialFilterExpression: { clientId: { $exists: true } } });
+
+// ✅ Generate IDs based on role
 userSchema.pre('save', function(next) {
   // Generate employee ID for employees
   if (this.role === UserRole.EMPLOYEE && !this.employeeId) {
@@ -233,9 +291,22 @@ userSchema.pre('save', function(next) {
     this.clientId = `CLI-${timestamp}-${random}`;
   }
 
+  // Generate client user ID for client_users
+  if (this.role === UserRole.CLIENT_USER && !this.employeeId) {
+    const timestamp = Date.now().toString().slice(-6);
+    const random = Math.random().toString(36).substr(2, 5).toUpperCase();
+    this.employeeId = `CU-${timestamp}-${random}`;
+  }
+
+  if (this.role === UserRole.CLIENT_USER && !this.clientId) {
+    const timestamp = Date.now().toString().slice(-6);
+    const random = Math.random().toString(36).substr(2, 5).toUpperCase();
+    this.clientId = `DUMMY-${timestamp}-${random}`;
+  }
+
   // Set appropriate department based on role if not provided
   if (!this.department) {
-    if (this.role === UserRole.CLIENT) {
+    if (this.role === UserRole.CLIENT || this.role === UserRole.CLIENT_USER) {
       this.department = "Clients";
     } else if (this.role === UserRole.EMPLOYEE) {
       this.department = "General";
@@ -244,74 +315,162 @@ userSchema.pre('save', function(next) {
     }
   }
   
+  // Validate company code requirements
+  if ((this.role === UserRole.CLIENT || this.role === UserRole.CLIENT_USER) && !this.companyCode) {
+    return next(new Error('companyCode is required for client and client_user roles'));
+  }
+  
+  // For ClientUsers, validate createdByClient
+  if (this.role === UserRole.CLIENT_USER && !this.createdByClient) {
+    return next(new Error('createdByClient is required for client_user role'));
+  }
+  
+  // For non-client roles, ensure companyCode is not set
+  if ((this.role === UserRole.ADMIN || this.role === UserRole.EMPLOYEE) && this.companyCode) {
+    this.companyCode = undefined;
+  }
+  
   next();
 });
 
-// Add indexes for reset token fields for better query performance
+// ✅ Indexes for better query performance
 userSchema.index({ resetToken: 1 });
 userSchema.index({ resetTokenExpiry: 1 });
 userSchema.index({ isActive: 1, resetTokenExpiry: 1 });
-
-// Only define indexes for fields that don't have 'unique: true'
 userSchema.index({ role: 1 });
 userSchema.index({ isActive: 1 });
 userSchema.index({ department: 1 });
 userSchema.index({ "employmentDetails.hireDate": 1 });
 userSchema.index({ "clientDetails.since": 1 });
+userSchema.index({ "clientUserDetails.accessLevel": 1 });
 
-// Compound indexes for better query performance
-userSchema.index({ role: 1, isActive: 1 });
-userSchema.index({ department: 1, isActive: 1 });
-userSchema.index({ "employmentDetails.employmentType": 1, isActive: 1 });
-userSchema.index({ clientType: 1, isActive: 1 });
+// ✅ Compound indexes for multi-tenant queries (only for client roles)
+userSchema.index({ companyCode: 1, role: 1 }, { sparse: true });
+userSchema.index({ companyCode: 1, isActive: 1 }, { sparse: true });
+userSchema.index({ companyCode: 1, department: 1 }, { sparse: true });
+userSchema.index({ companyCode: 1, role: 1, isActive: 1 }, { sparse: true });
+userSchema.index({ companyCode: 1, email: 1 }, { sparse: true });
+userSchema.index({ companyCode: 1, createdByClient: 1 }, { sparse: true });
 
-// Static method to find by reset token
-userSchema.statics.findByResetToken = function(token: string) {
-  return this.findOne({ 
+// ✅ Enhanced static methods with role-based company code handling
+userSchema.statics.findByResetToken = function(token: string, companyCode?: string) {
+  const query: any = { 
     resetToken: token,
     resetTokenExpiry: { $gt: new Date() },
     isActive: true 
+  };
+  
+  if (companyCode) {
+    query.companyCode = companyCode;
+  }
+  
+  return this.findOne(query);
+};
+
+// ✅ Find users with company code awareness
+userSchema.statics.findEmployees = function(companyCode?: string) {
+  const query: any = { role: UserRole.EMPLOYEE };
+  // Employees don't have companyCode, so we exclude if companyCode is provided
+  if (companyCode) {
+    query.companyCode = { $exists: false };
+  }
+  return this.find(query);
+};
+
+userSchema.statics.findClients = function(companyCode?: string) {
+  const query: any = { role: UserRole.CLIENT };
+  if (companyCode) {
+    query.companyCode = companyCode;
+  }
+  return this.find(query);
+};
+
+userSchema.statics.findClientUsers = function(companyCode: string, createdByClient?: string) {
+  const query: any = { 
+    role: UserRole.CLIENT_USER, 
+    companyCode: companyCode 
+  };
+  
+  if (createdByClient) {
+    query.createdByClient = createdByClient;
+  }
+  
+  return this.find(query);
+};
+
+userSchema.statics.findActiveUsers = function(companyCode?: string) {
+  const query: any = { isActive: true };
+  
+  if (companyCode) {
+    // For clients, filter by companyCode
+    query.$or = [
+      { role: UserRole.CLIENT, companyCode },
+      { role: UserRole.CLIENT_USER, companyCode }
+    ];
+  } else {
+    // For admin, get all active users (including those without companyCode)
+    query.companyCode = { $exists: false };
+  }
+  
+  return this.find(query);
+};
+
+userSchema.statics.findByEmail = function(email: string, companyCode?: string) {
+  const query: any = { email: email.toLowerCase() };
+  
+  if (companyCode) {
+    query.companyCode = companyCode;
+  } else {
+    // When no companyCode provided, look for admin/employee users
+    query.companyCode = { $exists: false };
+  }
+  
+  return this.findOne(query);
+};
+
+userSchema.statics.findByCompany = function(companyCode: string, filters = {}) {
+  return this.find({ 
+    companyCode: companyCode,
+    ...filters 
   });
 };
 
-// Static method to find employees
-userSchema.statics.findEmployees = function() {
-  return this.find({ role: UserRole.EMPLOYEE });
+userSchema.statics.isEmailExistsInCompany = function(email: string, companyCode?: string) {
+  const query: any = { email: email.toLowerCase() };
+  
+  if (companyCode) {
+    query.companyCode = companyCode;
+  } else {
+    query.companyCode = { $exists: false };
+  }
+  
+  return this.findOne(query).select('_id');
 };
 
-// Static method to find clients
-userSchema.statics.findClients = function() {
-  return this.find({ role: UserRole.CLIENT });
+userSchema.statics.findByClientCreator = function(_id: string, companyCode: string) {
+  return this.find({ 
+    createdByClient: _id,
+    companyCode: companyCode,
+    role: UserRole.CLIENT_USER
+  });
 };
 
-// Static method to find active users
-userSchema.statics.findActiveUsers = function() {
-  return this.find({ isActive: true });
-};
-
-// Static method to find by email
-userSchema.statics.findByEmail = function(email: string) {
-  return this.findOne({ email: email.toLowerCase() });
-};
-
-// Instance method to get user profile (without sensitive data)
+// ✅ Enhanced instance methods
 userSchema.methods.getProfile = function() {
   const userObject = this.toObject();
-  delete userObject.password;
-  delete userObject.resetToken;
-  delete userObject.resetTokenExpiry;
+  delete (userObject as any).password;
+  delete (userObject as any).resetToken;
+  delete (userObject as any).resetTokenExpiry;
   return userObject;
 };
 
-// Instance method to set reset token
 userSchema.methods.setResetToken = function() {
   const crypto = require('crypto');
   this.resetToken = crypto.randomBytes(32).toString('hex');
-  this.resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+  this.resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000);
   return this.save();
 };
 
-// Instance method to clear reset token
 userSchema.methods.clearResetToken = function() {
   this.resetToken = undefined;
   this.resetTokenExpiry = undefined;
@@ -319,7 +478,69 @@ userSchema.methods.clearResetToken = function() {
   return this.save();
 };
 
-// Virtual for full address
+// ✅ Enhanced permission checking
+userSchema.methods.belongsToCompany = function(companyCode: string) {
+  // Admin and employees don't belong to any company
+  if (this.role === UserRole.ADMIN || this.role === UserRole.EMPLOYEE) {
+    return false;
+  }
+  return this.companyCode === companyCode;
+};
+
+userSchema.methods.canManageUser = function(targetUser: IUser) {
+  // Admin can manage all users (including those without companyCode)
+  if (this.role === UserRole.ADMIN) {
+    return true;
+  }
+  
+  // Client can manage their own client users
+  if (this.role === UserRole.CLIENT) {
+    return targetUser.role === UserRole.CLIENT_USER &&
+           targetUser.companyCode === this.companyCode &&
+           targetUser.createdByClient?.toString() === this._id.toString();
+  }
+  
+  // Employees and client users cannot manage other users
+  return false;
+};
+
+userSchema.methods.canCreateUsers = function() {
+  return this.role === UserRole.ADMIN || this.role === UserRole.CLIENT;
+};
+
+userSchema.methods.getAllowedRolesToCreate = function() {
+  if (this.role === UserRole.ADMIN) {
+    return [UserRole.EMPLOYEE, UserRole.CLIENT];
+  }
+  if (this.role === UserRole.CLIENT) {
+    return [UserRole.CLIENT_USER];
+  }
+  return [];
+};
+
+// ✅ Enhanced authentication helper
+userSchema.statics.authenticateUser = async function(email: string, password: string) {
+  const user = await this.findOne({ email: email.toLowerCase(), isActive: true });
+  
+  if (!user) {
+    return null;
+  }
+  
+  const bcrypt = require('bcrypt');
+  const isPasswordValid = await bcrypt.compare(password, user.password);
+  
+  if (!isPasswordValid) {
+    return null;
+  }
+  
+  // Update last login
+  user.lastLoginAt = new Date();
+  await user.save();
+  
+  return user;
+};
+
+// Virtuals remain the same
 userSchema.virtual('fullAddress').get(function() {
   if (this.address) {
     const { street, city, state, zipCode, country } = this.address;
@@ -329,7 +550,6 @@ userSchema.virtual('fullAddress').get(function() {
   return '';
 });
 
-// Virtual for full billing address
 userSchema.virtual('fullBillingAddress').get(function() {
   if (this.billingAddress) {
     const { street, city, state, zipCode, country } = this.billingAddress;
@@ -339,7 +559,6 @@ userSchema.virtual('fullBillingAddress').get(function() {
   return '';
 });
 
-// Virtual for full shipping address
 userSchema.virtual('fullShippingAddress').get(function() {
   if (this.shippingAddress) {
     const { street, city, state, zipCode, country } = this.shippingAddress;
@@ -349,7 +568,6 @@ userSchema.virtual('fullShippingAddress').get(function() {
   return '';
 });
 
-// Virtual for age (if dateOfBirth is provided)
 userSchema.virtual('age').get(function() {
   if (this.dateOfBirth) {
     const today = new Date();
@@ -366,7 +584,6 @@ userSchema.virtual('age').get(function() {
   return null;
 });
 
-// Virtual for tenure (if employmentDetails.hireDate is provided)
 userSchema.virtual('tenure').get(function() {
   if (this.employmentDetails?.hireDate) {
     const today = new Date();
@@ -393,7 +610,6 @@ userSchema.virtual('tenure').get(function() {
   return null;
 });
 
-// Virtual for client relationship duration (if clientDetails.since is provided)
 userSchema.virtual('clientSinceDuration').get(function() {
   if (this.clientDetails?.since) {
     const today = new Date();

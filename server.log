@@ -1,0 +1,156 @@
+[dotenv@17.2.3] injecting env (11) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+🔧 Initializing Vertifit cPanel Email Service: {
+  host: 'mail.vertifitsolutions.com',
+  port: 587,
+  secure: false,
+  user: 'Chandan.mondal@vertifitsolutions.com',
+  hasPassword: true
+}
+✅ Vertifit cPanel SMTP Connection verified successfully
+✅ MongoDB connected successfully
+11:31:36 AM [express] serving on port 5000
+Browserslist: browsers data (caniuse-lite) is 12 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+A PostCSS plugin did not pass the `from` option to `postcss.parse`. This may cause imported assets to be incorrectly transformed. If you've recently added a PostCSS plugin that raised this warning, please contact the package author to fix the issue.
+11:31:56 AM [express] POST /api/auth/login 200 in 372ms :: {"user":{"_id":"6901dca15db070ea0d6123ff",…
+Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJfaWQiOiI2OTAxZGNhMTVkYjA3MGVhMGQ2MTIzZmYiLCJlbWFpbCI6ImFkbWluMzBAZXhhbXBsZS5jb20iLCJyb2xlIjoiY2xpZW50IiwiY29tcGFueUNvZGUiOiJFTUFNSS1FMDAxIiwiaWF0IjoxNzYxODkwNTE2LCJleHAiOjE3NjI0OTUzMTZ9.Lamh82_yHPqx6Wk13kXzBk0JZOGIJ5Fax7A2H9sFKYI
+Decoded token: {
+  _id: '6901dca15db070ea0d6123ff',
+  email: 'admin30@example.com',
+  role: 'client',
+  companyCode: 'EMAMI-E001',
+  iat: 1761890516,
+  exp: 1762495316
+}
+11:31:57 AM [express] GET /api/tickets/my-tickets 304 in 60ms :: [{"_id":"690330a62b6e998a57bf2596","…
+Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJfaWQiOiI2OTAxZGNhMTVkYjA3MGVhMGQ2MTIzZmYiLCJlbWFpbCI6ImFkbWluMzBAZXhhbXBsZS5jb20iLCJyb2xlIjoiY2xpZW50IiwiY29tcGFueUNvZGUiOiJFTUFNSS1FMDAxIiwiaWF0IjoxNzYxODkwNTE2LCJleHAiOjE3NjI0OTUzMTZ9.Lamh82_yHPqx6Wk13kXzBk0JZOGIJ5Fax7A2H9sFKYI
+Decoded token: {
+  _id: '6901dca15db070ea0d6123ff',
+  email: 'admin30@example.com',
+  role: 'client',
+  companyCode: 'EMAMI-E001',
+  iat: 1761890516,
+  exp: 1762495316
+}
+🔵 GET /api/users/client-user - Request received
+📦 Request Headers: {
+  host: 'localhost:5000',
+  connection: 'keep-alive',
+  'sec-ch-ua-platform': '"Windows"',
+  authorization: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJfaWQiOiI2OTAxZGNhMTVkYjA3MGVhMGQ2MTIzZmYiLCJlbWFpbCI6ImFkbWluMzBAZXhhbXBsZS5jb20iLCJyb2xlIjoiY2xpZW50IiwiY29tcGFueUNvZGUiOiJFTUFNSS1FMDAxIiwiaWF0IjoxNzYxODkwNTE2LCJleHAiOjE3NjI0OTUzMTZ9.Lamh82_yHPqx6Wk13kXzBk0JZOGIJ5Fax7A2H9sFKYI',
+  'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
+  'sec-ch-ua': '"Chromium";v="142", "Brave";v="142", "Not_A Brand";v="99"',
+  'sec-ch-ua-mobile': '?0',
+  accept: '*/*',
+  'sec-gpc': '1',
+  'accept-language': 'en-US,en;q=0.5',
+  'sec-fetch-site': 'same-origin',
+  'sec-fetch-mode': 'cors',
+  'sec-fetch-dest': 'empty',
+  referer: 'http://localhost:5000/client/clientUserManagement',
+  'accept-encoding': 'gzip, deflate, br, zstd',
+  cookie: 'sidebar_state=true',
+  'if-none-match': 'W/"6da-joio09Yqj+ovDGudbmTvCmhpz7Y"'
+}
+🔍 Query Parameters: { page: '1', limit: '10', sortBy: 'createdAt', sortOrder: 'desc' }
+👤 Authenticated User: {
+  _id: '6901dca15db070ea0d6123ff',
+  email: 'admin30@example.com',
+  role: 'client',
+  companyCode: 'EMAMI-E001',
+  iat: 1761890516,
+  exp: 1762495316
+}
+🔐 Client Details: {
+  clientId: '6901dca15db070ea0d6123ff',
+  companyCode: 'EMAMI-E001',
+  clientName: undefined
+}
+📊 Query Parameters Parsed: {
+  page: '1',
+  limit: '10',
+  search: '',
+  status: undefined,
+  accessLevel: undefined,
+  sortBy: 'createdAt',
+  sortOrder: 'desc'
+}
+📄 Pagination - Skip: 0 Limit: 10
+🔍 Base Query: {
+  companyCode: 'EMAMI-E001',
+  role: 'clientuser',
+  createdByClient: '6901dca15db070ea0d6123ff'
+}
+🔍 Final Query: {
+  "companyCode": "EMAMI-E001",
+  "role": "clientuser",
+  "createdByClient": "6901dca15db070ea0d6123ff"
+}
+📋 Fetching users from database...
+Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJfaWQiOiI2OTAxZGNhMTVkYjA3MGVhMGQ2MTIzZmYiLCJlbWFpbCI6ImFkbWluMzBAZXhhbXBsZS5jb20iLCJyb2xlIjoiY2xpZW50IiwiY29tcGFueUNvZGUiOiJFTUFNSS1FMDAxIiwiaWF0IjoxNzYxODkwNTE2LCJleHAiOjE3NjI0OTUzMTZ9.Lamh82_yHPqx6Wk13kXzBk0JZOGIJ5Fax7A2H9sFKYI
+Decoded token: {
+  _id: '6901dca15db070ea0d6123ff',
+  email: 'admin30@example.com',
+  role: 'client',
+  companyCode: 'EMAMI-E001',
+  iat: 1761890516,
+  exp: 1762495316
+}
+✅ Found 4 users
+📊 Counting total documents...
+✅ Client user statistics calculated: {
+  totalUsers: 4,
+  activeUsers: 4,
+  inactiveUsers: 0,
+  usersByAccessLevel: { basic: 2, standard: 1, admin: 1 },
+  recentUsers: 4,
+  usersWithRecentLogin: 1
+}
+11:31:59 AM [express] GET /api/users/client-user/stats 304 in 74ms :: {"totalUsers":4,"activeUsers":4…
+📈 Pagination Summary: { totalUsers: 4, totalPages: 1, currentPage: 1, usersReturned: 4 }
+📤 Sending response with users and ticket counts
+🔚 GET /api/users/client-user - Request completed
+11:31:59 AM [express] GET /api/users/client-user 200 in 498ms :: {"users":[{"_id":"690210de99643296a4…
+Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJfaWQiOiI2OTAxZGNhMTVkYjA3MGVhMGQ2MTIzZmYiLCJlbWFpbCI6ImFkbWluMzBAZXhhbXBsZS5jb20iLCJyb2xlIjoiY2xpZW50IiwiY29tcGFueUNvZGUiOiJFTUFNSS1FMDAxIiwiaWF0IjoxNzYxODkwNTE2LCJleHAiOjE3NjI0OTUzMTZ9.Lamh82_yHPqx6Wk13kXzBk0JZOGIJ5Fax7A2H9sFKYI
+Decoded token: {
+  _id: '6901dca15db070ea0d6123ff',
+  email: 'admin30@example.com',
+  role: 'client',
+  companyCode: 'EMAMI-E001',
+  iat: 1761890516,
+  exp: 1762495316
+}
+11:32:14 AM [express] GET /api/client/dashboard/stats 304 in 167ms :: {"clientInfo":{"companyCode":"E…
+Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJfaWQiOiI2OTAxZGNhMTVkYjA3MGVhMGQ2MTIzZmYiLCJlbWFpbCI6ImFkbWluMzBAZXhhbXBsZS5jb20iLCJyb2xlIjoiY2xpZW50IiwiY29tcGFueUNvZGUiOiJFTUFNSS1FMDAxIiwiaWF0IjoxNzYxODkwNTE2LCJleHAiOjE3NjI0OTUzMTZ9.Lamh82_yHPqx6Wk13kXzBk0JZOGIJ5Fax7A2H9sFKYI
+Decoded token: {
+  _id: '6901dca15db070ea0d6123ff',
+  email: 'admin30@example.com',
+  role: 'client',
+  companyCode: 'EMAMI-E001',
+  iat: 1761890516,
+  exp: 1762495316
+}
+11:32:14 AM [express] GET /api/users/client-user/[object%20Object] 400 in 16ms :: {"message":"Invalid…
+Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJfaWQiOiI2OTAxZGNhMTVkYjA3MGVhMGQ2MTIzZmYiLCJlbWFpbCI6ImFkbWluMzBAZXhhbXBsZS5jb20iLCJyb2xlIjoiY2xpZW50IiwiY29tcGFueUNvZGUiOiJFTUFNSS1FMDAxIiwiaWF0IjoxNzYxODkwNTE2LCJleHAiOjE3NjI0OTUzMTZ9.Lamh82_yHPqx6Wk13kXzBk0JZOGIJ5Fax7A2H9sFKYI
+Decoded token: {
+  _id: '6901dca15db070ea0d6123ff',
+  email: 'admin30@example.com',
+  role: 'client',
+  companyCode: 'EMAMI-E001',
+  iat: 1761890516,
+  exp: 1762495316
+}
+11:32:14 AM [express] GET /api/users/me 200 in 74ms :: {"_id":"6901dca15db070ea0d6123ff","name":"Demo…
+Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJfaWQiOiI2OTAxZGNhMTVkYjA3MGVhMGQ2MTIzZmYiLCJlbWFpbCI6ImFkbWluMzBAZXhhbXBsZS5jb20iLCJyb2xlIjoiY2xpZW50IiwiY29tcGFueUNvZGUiOiJFTUFNSS1FMDAxIiwiaWF0IjoxNzYxODkwNTE2LCJleHAiOjE3NjI0OTUzMTZ9.Lamh82_yHPqx6Wk13kXzBk0JZOGIJ5Fax7A2H9sFKYI
+Decoded token: {
+  _id: '6901dca15db070ea0d6123ff',
+  email: 'admin30@example.com',
+  role: 'client',
+  companyCode: 'EMAMI-E001',
+  iat: 1761890516,
+  exp: 1762495316
+}
+11:32:35 AM [express] GET /api/users/client-user/[object%20Object] 400 in 6ms :: {"message":"Invalid …
+[2m11:34:12 am[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/client/clientUserTickets.tsx, /src/index.css?v=EiDYt-HP0Nr6VulA3KyoS[22m

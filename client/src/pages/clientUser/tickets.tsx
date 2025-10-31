@@ -23,7 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-export default function ClientTicketsPage() {
+export default function ClientUserTicketsPage() {
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -100,7 +100,7 @@ export default function ClientTicketsPage() {
             View and manage all your support tickets
           </p>
         </div>
-        <Button onClick={() => setLocation("/client/create-ticket")} data-testid="button-create-ticket">
+        <Button onClick={() => setLocation("/clientUser/create-ticket")} data-testid="button-create-ticket">
           <Plus className="h-4 w-4 mr-2" />
           Create Ticket
         </Button>
@@ -146,7 +146,7 @@ export default function ClientTicketsPage() {
                 <div
                   key={ticket._id}
                   className="flex items-start justify-between p-4 border rounded-lg hover:bg-accent/50 cursor-pointer transition-colors"
-                  onClick={() => setLocation(`/client/tickets/${ticket._id}`)}
+                  onClick={() => setLocation(`/clientUser/tickets/${ticket._id}`)}
                   data-testid={`ticket-${ticket._id}`}
                 >
                   <div className="flex-1 min-w-0">

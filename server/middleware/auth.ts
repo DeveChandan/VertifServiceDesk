@@ -9,6 +9,7 @@ export interface AuthRequest extends Request {
     _id: string;
     email: string;
     role: UserRole;
+    companyCode?: string;
   };
 }
 
@@ -24,15 +25,19 @@ export function authenticateToken(
     return res.status(401).json({ message: "Access token required" });
   }
 
+  console.log('Token:', token);
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as {
       _id: string;
       email: string;
       role: UserRole;
+      companyCode?: string;
     };
+    console.log('Decoded token:', decoded);
     req.user = decoded;
     next();
   } catch (error) {
+    console.error('Token verification error:', error);
     return res.status(403).json({ message: "Invalid or expired token" });
   }
 }
@@ -51,6 +56,6 @@ export function authorizeRoles(...roles: UserRole[]) {
   };
 }
 
-export function generateToken(payload: { _id: string; email: string; role: UserRole }): string {
+export function generateToken(payload: { _id: string; email: string; role: UserRole; companyCode?: string }): string {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
 }

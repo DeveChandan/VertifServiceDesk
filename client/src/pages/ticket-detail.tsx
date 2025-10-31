@@ -1,4 +1,4 @@
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueries } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { Ticket, Comment, TicketStatus } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +9,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useState, useRef } from "react";
-import { ArrowLeft, Send, Paperclip, Eye, Download, X, Upload, Loader2 } from "lucide-react";
+import { ArrowLeft, Send, Paperclip, Eye, Download, X, Upload, Loader2, Mail, Phone, Building } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -26,6 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { UserRole } from "@shared/schema";
 
 interface PendingCommentFile {
   name: string;
@@ -49,6 +50,7 @@ export default function TicketDetailPage() {
   const [selectedAttachment, setSelectedAttachment] = useState<string | null>(null);
   const [commentAttachments, setCommentAttachments] = useState<PendingCommentFile[]>([]);
   const [uploadingCommentFiles, setUploadingCommentFiles] = useState<Set<string>>(new Set());
+  const [assigneesDialogOpen, setAssigneesDialogOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const ticketId = params.id;
@@ -60,6 +62,37 @@ export default function TicketDetailPage() {
   const { data: comments, isLoading: commentsLoading } = useQuery<CommentWithAttachments[]>({
     queryKey: ["/api/tickets", ticketId, "comments"],
   });
+
+  const assignedEmployees = ticket?.assignedEmployees || [];
+
+  const employeeDetailsQueries = useQueries({
+    queries: assignedEmployees.map(employee => {
+      return {
+        queryKey: ['/api/users', employee.employeeId],
+        queryFn: () => apiRequest('GET', `/api/users/${employee.employeeId}`),
+        enabled: !!employee.employeeId,
+      }
+    })
+  })
+
+  // Check if current user can access this ticket
+  const canAccessTicket = () => {
+    if (!user || !ticket) return false;
+    
+    // Admin and employees can access all tickets
+    if (user.role === UserRole.ADMIN || user.role === UserRole.EMPLOYEE) {
+      return true;
+    }
+    
+    // Clients and Client Users can only access tickets within their company code
+    if (user.role === UserRole.CLIENT || user.role === UserRole.CLIENT_USER) {
+      return ticket.companyCode === user.companyCode;
+    }
+    
+    return false;
+  };
+
+
 
   // File upload mutation for comment attachments
   const uploadFileMutation = useMutation({
@@ -148,12 +181,16 @@ export default function TicketDetailPage() {
   });
 
   const handleGoBack = () => {
-    if (user?.role === "admin") {
+    if (user?.role === UserRole.ADMIN) {
       setLocation("/admin/tickets");
-    } else if (user?.role === "employee") {
+    } else if (user?.role === UserRole.EMPLOYEE) {
       setLocation("/employee/dashboard");
-    } else {
+    } else if (user?.role === UserRole.CLIENT) { 
       setLocation("/client/tickets");
+    } else if (user?.role === UserRole.CLIENT_USER) {  
+      setLocation("/clientUser/tickets");
+    } else { 
+      setLocation("/"); 
     }
   };
 
@@ -300,6 +337,48 @@ export default function TicketDetailPage() {
     return <div>Ticket not found</div>;
   }
 
+  // Check if user can access this ticket
+  if (!canAccessTicket()) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleGoBack}
+            data-testid="button-back"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-3xl font-semibold">Access Denied</h1>
+            <p className="text-muted-foreground mt-1">
+              You don't have permission to view this ticket.
+            </p>
+          </div>
+        </div>
+        
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-center py-8">
+              <div className="mx-auto w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center mb-4">
+                <X className="h-8 w-8 text-destructive" />
+              </div>
+              <h3 className="text-lg font-semibold mb-2">Access Restricted</h3>
+              <p className="text-muted-foreground mb-4">
+                This ticket belongs to a different client. You can only view tickets from your own organization.
+              </p>
+              <Button onClick={handleGoBack}>
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back to Tickets
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -313,7 +392,7 @@ export default function TicketDetailPage() {
         </Button>
         <div className="flex-1">
           <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-semibold">Ticket #{ticket.ticketNumber}</h1>
+            <h1 className="text-3xl text-white font-semibold">Ticket #{ticket.ticketNumber}</h1>
             <StatusBadge status={ticket.status} />
           </div>
           <p className="text-muted-foreground mt-1">{ticket.title}</p>
@@ -630,12 +709,74 @@ export default function TicketDetailPage() {
                 <p className="text-sm text-muted-foreground mb-1">Client</p>
                 <p className="text-sm font-medium">{ticket.clientName}</p>
               </div>
-              {ticket.assignedToName && (
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">Assigned To</p>
-                  <p className="text-sm font-medium">{ticket.assignedToName}</p>
+              <div>
+                <p className="text-sm text-muted-foreground mb-1">CompanyCode</p>
+                <p className="text-sm font-medium">{ticket.companyCode}</p>
+              </div>
+             
+{ticket.assignedEmployeeNames && ticket.assignedEmployeeNames.length > 0 && (
+  <div>
+    <p className="text-sm text-muted-foreground mb-2">Assigned To ({ticket.assignedEmployeeNames.length})</p>
+    <div className="flex flex-wrap gap-2">
+      {ticket.assignedEmployees && ticket.assignedEmployees.slice(0, 3).map((assignedEmployee, index) => {
+        const employeeDetails = employeeDetailsQueries[index]?.data;
+
+        return (
+          <div
+            key={index}
+            className="group relative"
+          >
+            <div className="flex items-center space-x-2 bg-green-600 border border-blue-200 rounded-lg px-3 py-2 cursor-pointer hover:bg-blue-500 transition-colors">
+              <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                {assignedEmployee.employeeName.charAt(0).toUpperCase()}
+              </div>
+              <span className="text-sm font-medium">{assignedEmployee.employeeName}</span>
+              <Eye className="h-4 w-4 text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
+            
+            {/* Employee Details Tooltip */}
+            {employeeDetails && (
+              <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block bg-green-600  border border-gray-900 rounded-lg shadow-lg z-50 p-4 min-w-64">
+                <div className="flex items-center space-x-3 mb-3">
+                  <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center text-black text-lg font-medium">
+                    {employeeDetails.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-gray-900">{employeeDetails.name}</h4>
+                    <p className="text-sm text-gray-900">{employeeDetails.jobTitle || "Support Engineer"}</p>
+                  </div>
                 </div>
-              )}
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2 text-sm">
+                    <Mail className="h-4 w-4 text-gray-900" />
+                    <span>{employeeDetails.email}</span>
+                  </div>
+                  {employeeDetails.phone && (
+                    <div className="flex items-center space-x-2 text-sm">
+                      <Phone className="h-4 w-4 text-gray-900" />
+                      <span>{employeeDetails.phone}</span>
+                    </div>
+                  )}
+                  {employeeDetails.department && (
+                    <div className="flex items-center space-x-2 text-sm">
+                      <Building className="h-4 w-4 text-gray-900" />
+                      <span>{employeeDetails.department}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })}
+      {ticket.assignedEmployeeNames.length > 3 && (
+        <button onClick={() => setAssigneesDialogOpen(true)} className="text-pink-600 hover:text-blue-800 text-sm font-medium underline">
+          View all {ticket.assignedEmployeeNames.length} assignees
+        </button>
+      )}
+    </div>
+  </div>
+)}
               <div>
                 <p className="text-sm text-muted-foreground mb-1">Created</p>
                 <p className="text-sm font-medium">
@@ -664,7 +805,7 @@ export default function TicketDetailPage() {
             </CardContent>
           </Card>
 
-          {(user?.role === "employee" || user?.role === "admin") && (
+          {(user?.role === UserRole.EMPLOYEE || user?.role === UserRole.ADMIN) && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Update Status</CardTitle>
@@ -829,6 +970,58 @@ export default function TicketDetailPage() {
             <Button
               variant="outline"
               onClick={() => setAttachmentDialogOpen(false)}
+            >
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* All Assignees Dialog */}
+      <Dialog open={assigneesDialogOpen} onOpenChange={setAssigneesDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>All Assignees</DialogTitle>
+            <DialogDescription>
+              {assignedEmployees.length} people are assigned to this ticket.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 max-h-96 overflow-y-auto p-4">
+            {employeeDetailsQueries.map((query, index) => {
+              const employeeDetails = query.data;
+              const assignedEmployee = assignedEmployees[index];
+
+              if (query.isLoading) {
+                return <Skeleton key={index} className="h-12 w-full" />
+              }
+
+              if (!employeeDetails) {
+                return (
+                  <div key={index} className="flex items-center space-x-3 p-2 rounded-lg">
+                    <div className="w-8 h-8 bg-gray-500 rounded-full" />
+                    <span className="text-sm font-medium text-muted-foreground">Error loading details for {assignedEmployee.employeeName}</span>
+                  </div>
+                )
+              }
+
+              return (
+                <div key={index} className="flex items-center space-x-3 p-2 rounded-lg hover:bg-muted/50">
+                  <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-black text-sm font-medium">
+                    {employeeDetails.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">{employeeDetails.name}</p>
+                    <p className="text-xs text-muted-foreground">{employeeDetails.email}</p>
+                    {employeeDetails.phone && <p className="text-xs text-muted-foreground">{employeeDetails.phone}</p>}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setAssigneesDialogOpen(false)}
             >
               Close
             </Button>

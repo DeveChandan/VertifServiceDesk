@@ -41,6 +41,7 @@ import { insertUserSchema } from "@shared/schema";
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -279,7 +280,7 @@ export default function ClientsPage() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-semibold">Clients</h1>
+          <h1 className="text-3xl text-white font-semibold">Clients</h1>
           <p className="text-muted-foreground mt-1">
             Manage client accounts and relationships
           </p>
@@ -692,6 +693,7 @@ function ClientDetails({ client, formatCurrency }: { client: Client; formatCurre
 }
 
 // Client Form Component
+// Client Form Component - Updated with Company Code field
 function ClientForm({
   form,
   onSubmit,
@@ -702,6 +704,7 @@ function ClientForm({
   isSubmitting: boolean;
 }) {
   const mode = form.getValues()._id ? "edit" : "create";
+  
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -743,19 +746,47 @@ function ClientForm({
             </div>
 
             {mode === "create" && (
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password *</FormLabel>
-                    <FormControl>
-                      <Input type="password" placeholder="Enter password" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <>
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Password *</FormLabel>
+                      <FormControl>
+                        <Input type="password" placeholder="Enter password" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                {/* ✅ COMPANY CODE FIELD - REQUIRED FOR NEW CLIENTS */}
+                <FormField
+                  control={form.control}
+                  name="companyCode"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Company Code *</FormLabel>
+                      <FormControl>
+                        <Input 
+                          placeholder="ABC-CORP-001" 
+                          {...field}
+                          onChange={(e) => {
+                            // Auto-format to uppercase and remove spaces
+                            const value = e.target.value.toUpperCase().replace(/\s+/g, '-');
+                            field.onChange(value);
+                          }}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Unique identifier for this client company. This cannot be changed later.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </>
             )}
 
             <div className="grid grid-cols-2 gap-4">
@@ -825,6 +856,7 @@ function ClientForm({
             />
           </TabsContent>
 
+          {/* Rest of the form remains the same */}
           <TabsContent value="business" className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <FormField
@@ -931,6 +963,7 @@ function ClientForm({
           </TabsContent>
 
           <TabsContent value="address" className="space-y-6">
+            {/* Address fields remain the same */}
             <div className="space-y-4">
               <h4 className="font-medium text-lg">Billing Address</h4>
               <div className="grid grid-cols-2 gap-4">

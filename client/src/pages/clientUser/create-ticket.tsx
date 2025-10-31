@@ -43,7 +43,7 @@ const createTicketSchema = insertTicketSchema.extend({
 
 type CreateTicketFormData = z.infer<typeof createTicketSchema>;
 
-export default function CreateTicketPage() {
+export default function ClientUserCreateTicketPage() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -146,7 +146,7 @@ export default function CreateTicketPage() {
         title: "Ticket created successfully",
         description: `Ticket ${data.ticketNumber} has been created.`,
       });
-      setLocation("/client/dashboard");
+      setLocation("/clientUser/dashboard");
     },
     onError: (error: any) => {
       console.error("Ticket creation error:", error);
@@ -260,7 +260,7 @@ export default function CreateTicketPage() {
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => setLocation("/client/dashboard")}
+          onClick={() => setLocation("/clientUser/dashboard")}
           data-testid="button-back"
         >
           <ArrowLeft className="h-5 w-5" />
@@ -627,7 +627,7 @@ export default function CreateTicketPage() {
                     pendingFiles.forEach(file => {
                       URL.revokeObjectURL(file.localUrl);
                     });
-                    setLocation("/client/dashboard");
+                    setLocation("/clientUser/dashboard");
                   }}
                   data-testid="button-cancel"
                   disabled={isSubmitting || isAnyFileUploading}

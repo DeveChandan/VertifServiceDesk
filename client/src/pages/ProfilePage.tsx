@@ -5,7 +5,8 @@ import { PasswordChangeForm } from "@/components/password-change-form";
 import { UserProfileCard } from "@/components/user-profile-card";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Shield, User, Lock, Ticket, Settings } from "lucide-react";
+import { Shield, User, Lock, Ticket, Settings, Users } from "lucide-react";
+import { UserRole } from "@shared/schema";
 
 export default function ProfilePage() {
   const { user } = useAuth();
@@ -15,7 +16,7 @@ export default function ProfilePage() {
       <div className="flex items-center gap-3">
         <User className="h-8 w-8" />
         <div>
-          <h1 className="text-3xl font-semibold">My Profile</h1>
+          <h1 className="text-3xl text-white font-semibold">My Profile</h1>
           <p className="text-muted-foreground">
             Manage your account settings and personal information
           </p>
@@ -92,9 +93,10 @@ function RoleSpecificInfo() {
 
   return (
     <div className="space-y-6">
-      {user.role === 'admin' && <AdminRoleInfo />}
-      {user.role === 'employee' && <EmployeeRoleInfo />}
-      {user.role === 'client' && <ClientRoleInfo />}
+      {user.role === UserRole.ADMIN && <AdminRoleInfo />}
+      {user.role === UserRole.EMPLOYEE && <EmployeeRoleInfo />}
+      {user.role === UserRole.CLIENT && <ClientRoleInfo />}
+      {user.role === UserRole.CLIENT_USER && <ClientUserRoleInfo />}
     </div>
   );
 }
@@ -214,11 +216,66 @@ function ClientRoleInfo() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Ticket className="h-5 w-5" />
-          Client Access
+          <Users className="h-5 w-5" />
+          Client Administrator Access
         </CardTitle>
         <CardDescription>
-          Your role as a client allows you to create and track support tickets
+          Your role as a client administrator allows you to manage your organization's tickets and users
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2 p-4 border rounded-lg">
+            <h4 className="font-semibold">User Management</h4>
+            <ul className="text-sm text-muted-foreground space-y-1">
+              <li>• Create and manage client users</li>
+              <li>• Assign users to your organization</li>
+              <li>• Manage user permissions</li>
+            </ul>
+          </div>
+          
+          <div className="space-y-2 p-4 border rounded-lg">
+            <h4 className="font-semibold">Ticket Management</h4>
+            <ul className="text-sm text-muted-foreground space-y-1">
+              <li>• Create support tickets</li>
+              <li>• View all organization tickets</li>
+              <li>• Monitor ticket progress</li>
+            </ul>
+          </div>
+          
+          <div className="space-y-2 p-4 border rounded-lg">
+            <h4 className="font-semibold">Organization Oversight</h4>
+            <ul className="text-sm text-muted-foreground space-y-1">
+              <li>• Manage your organization profile</li>
+              <li>• View team ticket history</li>
+              <li>• Coordinate with support staff</li>
+            </ul>
+          </div>
+          
+          <div className="space-y-2 p-4 border rounded-lg">
+            <h4 className="font-semibold">Reporting</h4>
+            <ul className="text-sm text-muted-foreground space-y-1">
+              <li>• Access organization reports</li>
+              <li>• Track team ticket metrics</li>
+              <li>• Monitor support performance</li>
+            </ul>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ClientUserRoleInfo() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Ticket className="h-5 w-5" />
+          Client User Access
+        </CardTitle>
+        <CardDescription>
+          Your role as a client user allows you to create and track your support tickets
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -235,7 +292,7 @@ function ClientRoleInfo() {
           <div className="space-y-2 p-4 border rounded-lg">
             <h4 className="font-semibold">Ticket Tracking</h4>
             <ul className="text-sm text-muted-foreground space-y-1">
-              <li>• View all your submitted tickets</li>
+              <li>• View your submitted tickets</li>
               <li>• Track ticket status and progress</li>
               <li>• Receive status notifications</li>
             </ul>
@@ -251,11 +308,11 @@ function ClientRoleInfo() {
           </div>
           
           <div className="space-y-2 p-4 border rounded-lg">
-            <h4 className="font-semibold">History</h4>
+            <h4 className="font-semibold">Personal History</h4>
             <ul className="text-sm text-muted-foreground space-y-1">
-              <li>• View your ticket history</li>
-              <li>• Access resolved tickets</li>
-              <li>• Review past interactions</li>
+              <li>• View your personal ticket history</li>
+              <li>• Access your resolved tickets</li>
+              <li>• Review your past interactions</li>
             </ul>
           </div>
         </div>

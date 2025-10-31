@@ -82,7 +82,8 @@ app.post("/api/auth/register", async (req, res) => {
       jobTitle,
       dateOfBirth,
       address,
-      emergencyContact
+      emergencyContact,
+      companyCode
     } = req.body;
 
     const existingUser = await UserModel.findOne({ email });
@@ -104,13 +105,15 @@ app.post("/api/auth/register", async (req, res) => {
       dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
       address,
       emergencyContact,
-      isActive: true
+      isActive: true,
+      companyCode
     });
 
     const token = generateToken({
       _id: user._id.toString(),
       email: user.email,
       role: user.role,
+      companyCode: user.companyCode
     });
 
     const userResponse = getUserResponse(user);
@@ -143,6 +146,7 @@ app.post("/api/auth/login", async (req, res) => {
       _id: user._id.toString(),
       email: user.email,
       role: user.role,
+      companyCode: user.companyCode,
     });
 
     const userResponse = getUserResponse(user);
@@ -524,6 +528,509 @@ app.get("/api/users/clients", authenticateToken, authorizeRoles(UserRole.ADMIN),
     res.status(500).json({ message: error.message });
   }
 });
+// Client User Routes
+// ==================
+
+app.post("/api/users/client-user", authenticateToken, authorizeRoles(UserRole.CLIENT), async (req: AuthRequest, res) => {
+  try {
+    console.log('🔵 POST /api/users/client-user - Request received');
+    console.log('📦 Request Headers:', req.headers);
+    console.log('📦 Request Body:', JSON.stringify(req.body, null, 2));
+    console.log('👤 Authenticated User:', req.user);
+
+    const {
+      name,
+      email,
+      phone,
+      jobTitle,
+      clientUserDetails
+    } = req.body;
+
+    const currentClient = req.user;
+
+    // Log authentication details
+    console.log('🔐 Authentication Check:');
+    console.log('  - Current Client:', currentClient);
+    console.log('  - Client ID:', currentClient?._id);
+    console.log('  - Client Company Code:', currentClient?.companyCode);
+
+    // Ensure the authenticated user is present and has a companyCode
+    if (!currentClient) {
+      console.log('❌ Unauthorized: No current client found');
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    if (!name || !email) {
+      console.log('❌ Validation Failed:');
+      console.log('  - Name provided:', !!name, name);
+      console.log('  - Email provided:', !!email, email);
+      return res.status(400).json({ message: "name and email are required" });
+    }
+
+    // Ensure current client has a companyCode before querying
+    if (!currentClient.companyCode) {
+      console.log('❌ Missing companyCode for client:', currentClient._id);
+      return res.status(400).json({ message: "Current client does not have a companyCode" });
+    }
+
+    console.log('🔍 Checking for existing user with email:', email.toLowerCase());
+    
+    // Check if email exists in the same company
+    const existingUser = await UserModel.findOne({ 
+      email: email.toLowerCase(), 
+      companyCode: currentClient.companyCode 
+    });
+    
+    console.log('📊 Existing user check result:', existingUser ? 'User exists' : 'No existing user');
+    
+    if (existingUser) {
+      console.log('❌ Email already registered:', email);
+      return res.status(400).json({ message: "Email already registered in your company" });
+    }
+
+    console.log('🔑 Generating temporary password...');
+    const temporaryPassword = Math.random().toString(36).slice(-8);
+    const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
+
+    const userData = {
+      name,
+      email,
+      password: hashedPassword,
+      role: UserRole.CLIENT_USER,
+      phone,
+      companyCode: currentClient.companyCode,
+      createdByClient: currentClient._id,
+      //clientId: currentClient._id, // ← TEMPORARY FIX - add this line
+      clientUserDetails: {
+        permissions: clientUserDetails?.permissions || ["read_projects", "create_tickets"],
+        accessLevel: clientUserDetails?.accessLevel || "basic",
+        isPrimaryContact: clientUserDetails?.isPrimaryContact || false
+      },
+      jobTitle,
+      department: "Clients",
+      isActive: true
+    };
+
+    console.log('💾 Creating user with data:', JSON.stringify(userData, null, 2));
+
+    const user = await UserModel.create(userData);
+    console.log('✅ User created successfully:', user._id);
+
+    // Send welcome email to client user
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
+          <h1 style="margin: 0;">Welcome to Vertifit Service Desk</h1>
+        </div>
+        <div style="background: white; padding: 30px;">
+          <h2>Hello ${user.name},</h2>
+          <p>Your Client User account has been created by ${currentClient.name}.</p>
+          <p>Company: <strong>${user.companyCode}</strong></p>
+          
+          <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea;">
+            <h3 style="margin-top: 0;">Your Login Credentials:</h3>
+            <p><strong>Email:</strong> ${user.email}</p>
+            <p><strong>Password:</strong> ${temporaryPassword}</p>
+            <p><strong>Login URL:</strong> <a href="${process.env.APP_URL}">${process.env.APP_URL}</a></p>
+          </div>
+          
+          <p>Access Level: <strong>${user.clientUserDetails?.accessLevel}</strong></p>
+          <p>Please log in and change your password after first login.</p>
+        </div>
+      </div>
+    `;
+
+    console.log('📧 Attempting to send welcome email to:', user.email);
+    try {
+      await vertifitEmailService.sendEmail({
+        to: user.email,
+        subject: "Welcome to Vertifit Service Desk - Your Client User Account",
+        html: emailHtml,
+        text: `Your Client User account has been created. Email: ${user.email}, Password: ${temporaryPassword}, Login: ${process.env.APP_URL}`
+      });
+      console.log('✅ Welcome email sent successfully');
+    } catch (emailError) {
+      console.error("❌ Failed to send welcome email:", emailError);
+      // Don't fail the request if email fails
+    }
+
+    const userResponse = getUserResponse(user);
+    console.log('📤 Sending response with user data');
+    
+    res.status(201).json(userResponse);
+  } catch (error: any) {
+    console.error("❌ Create client user error:", error);
+    console.error("❌ Error stack:", error.stack);
+    console.error("❌ Error details:", {
+      message: error.message,
+      name: error.name,
+      code: error.code
+    });
+    res.status(500).json({ message: error.message });
+  } finally {
+    console.log('🔚 POST /api/users/client-user - Request completed');
+  }
+});
+// Get all client users for current client
+app.get("/api/users/client-user", authenticateToken, authorizeRoles(UserRole.CLIENT), async (req: AuthRequest, res) => {
+  try {
+    console.log('🔵 GET /api/users/client-user - Request received');
+    console.log('📦 Request Headers:', req.headers);
+    console.log('🔍 Query Parameters:', req.query);
+    console.log('👤 Authenticated User:', req.user);
+
+    const currentClient = req.user;
+    if (!currentClient) {
+      console.log('❌ Unauthorized: No current client found');
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    console.log('🔐 Client Details:', {
+      clientId: currentClient._id,
+      companyCode: currentClient.companyCode,
+      clientName: currentClient.name
+    });
+
+    const { 
+      page = 1, 
+      limit = 10, 
+      search = '', 
+      status, 
+      accessLevel, 
+      sortBy = 'createdAt', 
+      sortOrder = 'desc' 
+    } = req.query;
+
+    console.log('📊 Query Parameters Parsed:', {
+      page, limit, search, status, accessLevel, sortBy, sortOrder
+    });
+
+    const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
+    console.log('📄 Pagination - Skip:', skip, 'Limit:', limit);
+
+    // Build query
+    const query: any = {
+      companyCode: currentClient.companyCode,
+      role: UserRole.CLIENT_USER,
+      createdByClient: currentClient._id
+    };
+
+    console.log('🔍 Base Query:', query);
+
+    // Search filter
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { jobTitle: { $regex: search, $options: 'i' } }
+      ];
+      console.log('🔍 Search Filter Applied:', query.$or);
+    }
+
+    // Status filter
+    if (status) {
+      query.isActive = status === 'active';
+      console.log('🔍 Status Filter:', { status, isActive: query.isActive });
+    }
+
+    // Access level filter
+    if (accessLevel) {
+      query['clientUserDetails.accessLevel'] = accessLevel;
+      console.log('🔍 Access Level Filter:', accessLevel);
+    }
+
+    console.log('🔍 Final Query:', JSON.stringify(query, null, 2));
+
+    // Get users with pagination
+    console.log('📋 Fetching users from database...');
+    const users = await UserModel.find(query)
+      .select('-password -resetToken -resetTokenExpiry')
+      .sort({ [sortBy as string]: sortOrder === 'desc' ? -1 : 1 })
+      .skip(skip)
+      .limit(parseInt(limit as string));
+
+    console.log(`✅ Found ${users.length} users`);
+
+    // Get total count for pagination
+    console.log('📊 Counting total documents...');
+    const totalUsers = await UserModel.countDocuments(query);
+    const totalPages = Math.ceil(totalUsers / parseInt(limit as string));
+
+    console.log('📈 Pagination Summary:', {
+      totalUsers,
+      totalPages,
+      currentPage: parseInt(page as string),
+      usersReturned: users.length
+    });
+
+    const usersWithTicketCounts = await Promise.all(
+      users.map(async (user) => {
+        const ticketCount = await TicketModel.countDocuments({ createdBy: user._id });
+        return {
+          ...getUserResponse(user),
+          ticketCount,
+        };
+      })
+    );
+
+    const response = {
+      users: usersWithTicketCounts,
+      pagination: {
+        currentPage: parseInt(page as string),
+        totalPages,
+        totalUsers,
+        hasNext: parseInt(page as string) < totalPages,
+        hasPrev: parseInt(page as string) > 1,
+      },
+    };
+
+    console.log('📤 Sending response with users and ticket counts');
+    res.json(response);
+  } catch (error: any) {
+    console.error("❌ Get client users error:", error);
+    console.error("❌ Error stack:", error.stack);
+    console.error("❌ Error details:", {
+      message: error.message,
+      name: error.name,
+      code: error.code
+    });
+    res.status(500).json({ message: "Failed to fetch client users" });
+  } finally {
+    console.log('🔚 GET /api/users/client-user - Request completed');
+  }
+});
+
+// Get client user statistics
+app.get("/api/users/client-user/stats", authenticateToken, authorizeRoles(UserRole.CLIENT), async (req: AuthRequest, res) => {
+  try {
+    const currentClient = req.user!;
+
+    // Get all client users for this client
+    const clientUsers = await UserModel.find({
+      companyCode: currentClient.companyCode,
+      role: UserRole.CLIENT_USER,
+      createdByClient: currentClient._id
+    });
+
+    // Calculate statistics
+    const stats = {
+      totalUsers: clientUsers.length,
+      activeUsers: clientUsers.filter(user => user.isActive).length,
+      inactiveUsers: clientUsers.filter(user => !user.isActive).length,
+      usersByAccessLevel: {
+        basic: clientUsers.filter(user => user.clientUserDetails?.accessLevel === 'basic').length,
+        standard: clientUsers.filter(user => user.clientUserDetails?.accessLevel === 'standard').length,
+        admin: clientUsers.filter(user => user.clientUserDetails?.accessLevel === 'admin').length,
+      },
+      recentUsers: clientUsers.filter(user => 
+        user.createdAt >= new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      ).length,
+      usersWithRecentLogin: clientUsers.filter(user => 
+        user.lastLoginAt && user.lastLoginAt >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+      ).length
+    };
+console.log('✅ Client user statistics calculated:', stats);
+    res.json(stats);
+  } catch (error: any) {
+    console.error("Get client user stats error:", error);
+    res.status(500).json({ message: "Failed to fetch user statistics" });
+  }
+});
+
+// Get specific client user
+app.get("/api/users/client-user/:id", authenticateToken, authorizeRoles(UserRole.CLIENT), async (req: AuthRequest, res) => {
+  try {
+    const currentClient = req.user!;
+    const { id } = req.params;
+
+    if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ message: "Invalid user ID format" });
+    }
+
+    const user = await UserModel.findOne({
+      _id: id,
+      companyCode: currentClient.companyCode,
+      role: UserRole.CLIENT_USER,
+      createdByClient: currentClient._id
+    }).select('-password -resetToken -resetTokenExpiry');
+
+    if (!user) {
+      return res.status(404).json({ message: "Client user not found" });
+    }
+console.log('✅ Client user found:', user._id,"all" ,user);
+    res.json(getUserResponse(user));
+  } catch (error: any) {
+    console.error("Get client user error:", error);
+    res.status(500).json({ message: "Failed to fetch client user" });
+  }
+});
+
+// Update client user
+app.patch("/api/users/client-user/:id", authenticateToken, authorizeRoles(UserRole.CLIENT), async (req: AuthRequest, res) => {
+  try {
+    const currentClient = req.user;
+    const { id } = req.params;
+    const updateData = req.body;
+
+    // Remove fields that shouldn't be updated by client
+    delete updateData.password;
+    delete updateData.role;
+    delete updateData.companyCode;
+    delete updateData.createdByClient;
+    delete updateData.employeeId;
+
+    const user = await UserModel.findOneAndUpdate(
+      {
+        _id: id,
+        companyCode: currentClient.companyCode,
+        role: UserRole.CLIENT_USER,
+        createdByClient: currentClient._id
+      },
+      updateData,
+      { new: true, runValidators: true }
+    ).select('-password -resetToken -resetTokenExpiry');
+
+    if (!user) {
+      return res.status(404).json({ message: "Client user not found" });
+    }
+
+    res.json({
+      ...getUserResponse(user),
+      message: "Client user updated successfully"
+    });
+  } catch (error: any) {
+    console.error("Update client user error:", error);
+    res.status(500).json({ message: "Failed to update client user" });
+  }
+});
+
+// Deactivate client user
+app.patch("/api/users/client-user/:id/deactivate", authenticateToken, authorizeRoles(UserRole.CLIENT), async (req: AuthRequest, res) => {
+  try {
+    const currentClient = req.user;
+    const { id } = req.params;
+
+    const user = await UserModel.findOneAndUpdate(
+      {
+        _id: id,
+        companyCode: currentClient.companyCode,
+        role: UserRole.CLIENT_USER,
+        createdByClient: currentClient._id
+      },
+      { isActive: false },
+      { new: true }
+    ).select('-password -resetToken -resetTokenExpiry');
+
+    if (!user) {
+      return res.status(404).json({ message: "Client user not found" });
+    }
+
+    res.json({
+      ...getUserResponse(user),
+      message: "Client user deactivated successfully"
+    });
+  } catch (error: any) {
+    console.error("Deactivate client user error:", error);
+    res.status(500).json({ message: "Failed to deactivate client user" });
+  }
+});
+
+// Reactivate client user
+app.patch("/api/users/client-user/:id/reactivate", authenticateToken, authorizeRoles(UserRole.CLIENT), async (req: AuthRequest, res) => {
+  try {
+    const currentClient = req.user;
+    const { id } = req.params;
+
+    const user = await UserModel.findOneAndUpdate(
+      {
+        _id: id,
+        companyCode: currentClient.companyCode,
+        role: UserRole.CLIENT_USER,
+        createdByClient: currentClient._id
+      },
+      { isActive: true },
+      { new: true }
+    ).select('-password -resetToken -resetTokenExpiry');
+
+    if (!user) {
+      return res.status(404).json({ message: "Client user not found" });
+    }
+
+    res.json({
+      ...getUserResponse(user),
+      message: "Client user reactivated successfully"
+    });
+  } catch (error: any) {
+    console.error("Reactivate client user error:", error);
+    res.status(500).json({ message: "Failed to reactivate client user" });
+  }
+});
+
+// Client Dashboard Statistics
+app.get("/api/client/dashboard/stats", authenticateToken, authorizeRoles(UserRole.CLIENT), async (req: AuthRequest, res) => {
+  try {
+    const currentClient = req.user;
+
+    // Get client users count
+    const clientUsers = await UserModel.find({
+      companyCode: currentClient.companyCode,
+      role: UserRole.CLIENT_USER,
+      createdByClient: currentClient._id
+    });
+
+    // Get tickets statistics
+    const tickets = await TicketModel.find({
+      companyCode: currentClient.companyCode
+    });
+
+    // Calculate ticket statistics
+    const ticketStats = {
+      total: tickets.length,
+      open: tickets.filter(t => t.status === 'open').length,
+      inProgress: tickets.filter(t => t.status === 'in_progress').length,
+      resolved: tickets.filter(t => t.status === 'resolved').length,
+      closed: tickets.filter(t => t.status === 'closed').length,
+      highPriority: tickets.filter(t => t.priority === 'high').length,
+    };
+
+    // Get recent activity
+    const recentUsers = await UserModel.find({
+      companyCode: currentClient.companyCode,
+      role: UserRole.CLIENT_USER,
+      createdByClient: currentClient._id,
+      createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+    });
+
+    const stats = {
+      clientInfo: {
+        companyName: currentClient.company,
+        companyCode: currentClient.companyCode,
+        clientSince: currentClient.clientDetails?.since
+      },
+      userStats: {
+        totalUsers: clientUsers.length,
+        activeUsers: clientUsers.filter(u => u.isActive).length,
+        inactiveUsers: clientUsers.filter(u => !u.isActive).length,
+        recentUsers: recentUsers.length,
+        usersByAccessLevel: {
+          basic: clientUsers.filter(u => u.clientUserDetails?.accessLevel === 'basic').length,
+          standard: clientUsers.filter(u => u.clientUserDetails?.accessLevel === 'standard').length,
+          admin: clientUsers.filter(u => u.clientUserDetails?.accessLevel === 'admin').length,
+        }
+      },
+      ticketStats,
+      recentActivity: {
+        lastLogin: currentClient.lastLoginAt,
+        usersCreatedThisMonth: recentUsers.length
+      }
+    };
+
+    res.json(stats);
+  } catch (error: any) {
+    console.error('Dashboard stats error:', error);
+    res.status(500).json({ message: 'Failed to fetch dashboard statistics' });
+  }
+});
 
 // Get all users (admin only)
 app.get("/api/users", authenticateToken, authorizeRoles(UserRole.ADMIN), async (req, res) => {
@@ -659,16 +1166,53 @@ app.post("/api/users", authenticateToken, authorizeRoles(UserRole.ADMIN), async 
       contactPerson,
       billingAddress,
       shippingAddress,
-      clientDetails
+      clientDetails,
+      // ✅ Multi-tenant fields
+      companyCode
     } = req.body;
 
     if (!name || !email) {
       return res.status(400).json({ message: "name and email are required" });
     }
 
-    const existingUser = await UserModel.findOne({ email });
+    // ✅ Enhanced email uniqueness check based on role
+    let existingUser;
+    if (role === UserRole.CLIENT || role === UserRole.CLIENT_USER) {
+      // For client roles, check email + companyCode uniqueness
+      existingUser = await UserModel.findOne({ 
+        email: email.toLowerCase(),
+        companyCode: role === UserRole.CLIENT ? companyCode : undefined 
+      });
+    } else {
+      // For admin/employee, check email uniqueness (no company code)
+      existingUser = await UserModel.findOne({ 
+        email: email.toLowerCase(),
+        companyCode: { $exists: false }
+      });
+    }
+
     if (existingUser) {
-      return res.status(400).json({ message: "Email already registered" });
+      return res.status(400).json({ 
+        message: role === UserRole.CLIENT || role === UserRole.CLIENT_USER 
+          ? "Email already registered in this company" 
+          : "Email already registered"
+      });
+    }
+
+    // ✅ Validate company code requirements
+    if ((role === UserRole.CLIENT || role === UserRole.CLIENT_USER) && !companyCode) {
+      return res.status(400).json({ message: "companyCode is required for client and client_user roles" });
+    }
+
+    // ✅ For clients, ensure company code is unique
+    if (role === UserRole.CLIENT) {
+      const existingClientWithCompanyCode = await UserModel.findOne({ 
+        companyCode,
+        role: UserRole.CLIENT 
+      });
+      if (existingClientWithCompanyCode) {
+        return res.status(400).json({ message: "Company code already in use" });
+      }
     }
 
     const temporaryPassword = Math.random().toString(36).slice(-8);
@@ -704,24 +1248,18 @@ app.post("/api/users", authenticateToken, authorizeRoles(UserRole.ADMIN), async 
           }
         : undefined;
 
-      // Auto-generate employeeId if not provided
-      const finalEmployeeId = `EMP-${Date.now().toString().slice(-6)}`;
-
       userData.department = department || "General";
       userData.skills = finalSkills;
       userData.jobTitle = jobTitle;
-      userData.employeeId = finalEmployeeId;
       userData.dateOfBirth = dob;
       userData.address = address;
       userData.emergencyContact = emergencyContact;
       userData.employmentDetails = normalizedEmploymentDetails;
+      // employeeId will be auto-generated in pre-save hook
     }
 
     // Handle client-specific data
     if (role === UserRole.CLIENT) {
-      // Auto-generate clientId if not provided
-      const finalClientId = clientId || `CLI-${Date.now().toString().slice(-6)}`;
-
       // Normalize clientDetails.since if provided
       const normalizedClientDetails = clientDetails
         ? {
@@ -730,76 +1268,162 @@ app.post("/api/users", authenticateToken, authorizeRoles(UserRole.ADMIN), async 
           }
         : undefined;
 
+      userData.companyCode = companyCode; // ✅ Set company code for clients
       userData.company = company;
       userData.industry = industry;
-      userData.clientType = clientType || "individual";
-      userData.clientId = finalClientId;
+      userData.clientType = clientType || "business";
       userData.contactPerson = contactPerson;
       userData.billingAddress = billingAddress;
       userData.shippingAddress = shippingAddress;
       userData.clientDetails = normalizedClientDetails;
+      // clientId will be auto-generated in pre-save hook
+    }
+
+    // ✅ Handle client user creation (admin can create client users for clients)
+    if (role === UserRole.CLIENT_USER) {
+      if (!companyCode) {
+        return res.status(400).json({ message: "companyCode is required for client_user role" });
+      }
+
+      // Verify the company code belongs to an existing client
+      const existingClient = await UserModel.findOne({
+        companyCode,
+        role: UserRole.CLIENT
+      });
+
+      if (!existingClient) {
+        return res.status(400).json({ message: "Invalid company code or client not found" });
+      }
+
+      userData.companyCode = companyCode;
+      userData.createdByClient = existingClient._id;
+      userData.department = department || "Clients";
+      userData.jobTitle = jobTitle;
+      userData.clientUserDetails = {
+        permissions: ["read_projects", "create_tickets"],
+        accessLevel: "basic",
+        isPrimaryContact: false
+      };
+      // employeeId will be auto-generated as CU- prefix in pre-save hook
     }
 
     const user = await UserModel.create(userData);
 
     // Send welcome email
     let emailHtml;
-    if (user.role === UserRole.EMPLOYEE) {
-      emailHtml = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
-            <h1 style="margin: 0;">Welcome to Vertifit Service Desk</h1>
-          </div>
-          <div style="background: white; padding: 30px;">
-            <h2>Hello ${user.name},</h2>
-            <p>Your Employee account has been created successfully.</p>
-            <p>Your Employee ID is: <strong>${user.employeeId}</strong></p>
-            
-            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea;">
-              <h3 style="margin-top: 0;">Your Login Credentials:</h3>
-              <p><strong>Email:</strong> ${user.email}</p>
-              <p><strong>Password:</strong> ${temporaryPassword}</p>
-              <p><strong>Login URL:</strong> <a href="${process.env.APP_URL}">${process.env.APP_URL}</a></p>
+    let emailSubject = "";
+
+    switch (user.role) {
+      case UserRole.EMPLOYEE:
+        emailSubject = "Welcome to Vertifit Service Desk - Your Employee Account";
+        emailHtml = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
+              <h1 style="margin: 0;">Welcome to Vertifit Service Desk</h1>
             </div>
-            
-            <p>Please log in and change your password after first login.</p>
-          </div>
-        </div>
-      `;
-    } else {
-      emailHtml = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
-            <h1 style="margin: 0;">Welcome to Vertifit Service Desk</h1>
-          </div>
-          <div style="background: white; padding: 30px;">
-            <h2>Hello ${user.name},</h2>
-            <p>Your Client account has been created successfully.</p>
-            
-            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea;">
-              <h3 style="margin-top: 0;">Your Login Credentials:</h3>
-              <p><strong>Email:</strong> ${user.email}</p>
-              <p><strong>Password:</strong> ${temporaryPassword}</p>
-              <p><strong>Login URL:</strong> <a href="${process.env.APP_URL}">${process.env.APP_URL}</a></p>
+            <div style="background: white; padding: 30px;">
+              <h2>Hello ${user.name},</h2>
+              <p>Your Employee account has been created successfully.</p>
+              <p>Your Employee ID is: <strong>${user.employeeId}</strong></p>
+              
+              <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea;">
+                <h3 style="margin-top: 0;">Your Login Credentials:</h3>
+                <p><strong>Email:</strong> ${user.email}</p>
+                <p><strong>Password:</strong> ${temporaryPassword}</p>
+                <p><strong>Login URL:</strong> <a href="${process.env.APP_URL}">${process.env.APP_URL}</a></p>
+              </div>
+              
+              <p>Please log in and change your password after first login.</p>
             </div>
-            
-            <p>Please log in and change your password after first login.</p>
           </div>
-        </div>
-      `;
+        `;
+        break;
+
+      case UserRole.CLIENT:
+        emailSubject = "Welcome to Vertifit Service Desk - Your Client Account";
+        emailHtml = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
+              <h1 style="margin: 0;">Welcome to Vertifit Service Desk</h1>
+            </div>
+            <div style="background: white; padding: 30px;">
+              <h2>Hello ${user.name},</h2>
+              <p>Your Client account has been created successfully.</p>
+              <p>Your Client ID is: <strong>${user.clientId}</strong></p>
+              <p>Your Company Code: <strong>${user.companyCode}</strong></p>
+              
+              <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea;">
+                <h3 style="margin-top: 0;">Your Login Credentials:</h3>
+                <p><strong>Email:</strong> ${user.email}</p>
+                <p><strong>Password:</strong> ${temporaryPassword}</p>
+                <p><strong>Login URL:</strong> <a href="${process.env.APP_URL}">${process.env.APP_URL}</a></p>
+              </div>
+              
+              <p>You can now create and manage users for your company using your company code.</p>
+              <p>Please log in and change your password after first login.</p>
+            </div>
+          </div>
+        `;
+        break;
+
+      case UserRole.CLIENT_USER:
+        emailSubject = "Welcome to Vertifit Service Desk - Your Client User Account";
+        emailHtml = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
+              <h1 style="margin: 0;">Welcome to Vertifit Service Desk</h1>
+            </div>
+            <div style="background: white; padding: 30px;">
+              <h2>Hello ${user.name},</h2>
+              <p>Your Client User account has been created successfully.</p>
+              <p>Your User ID is: <strong>${user.employeeId}</strong></p>
+              <p>Company: <strong>${user.companyCode}</strong></p>
+              
+              <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea;">
+                <h3 style="margin-top: 0;">Your Login Credentials:</h3>
+                <p><strong>Email:</strong> ${user.email}</p>
+                <p><strong>Password:</strong> ${temporaryPassword}</p>
+                <p><strong>Login URL:</strong> <a href="${process.env.APP_URL}">${process.env.APP_URL}</a></p>
+              </div>
+              
+              <p>Access Level: <strong>${user.clientUserDetails?.accessLevel}</strong></p>
+              <p>Please log in and change your password after first login.</p>
+            </div>
+          </div>
+        `;
+        break;
     }
 
-    await vertifitEmailService.sendEmail({
-      to: user.email,
-      subject: `Welcome to Vertifit Service Desk - Your ${user.role} Account`,
-      html: emailHtml,
-      text: `Welcome to Vertifit Service Desk! Your ${user.role} account has been created. Email: ${user.email}, Password: ${temporaryPassword}, Login: ${process.env.APP_URL}`
-    });
+    try {
+      await vertifitEmailService.sendEmail({
+        to: user.email,
+        subject: emailSubject,
+        html: emailHtml,
+        text: `Welcome to Vertifit Service Desk! Your ${user.role} account has been created. Email: ${user.email}, Password: ${temporaryPassword}, Login: ${process.env.APP_URL}`
+      });
+    } catch (emailError) {
+      console.error("Failed to send welcome email:", emailError);
+      // Don't fail the request if email fails
+    }
 
     const userResponse = getUserResponse(user);
-    res.json(userResponse);
+    res.status(201).json({
+      ...userResponse,
+      temporaryPassword: temporaryPassword, // Include in response for admin reference
+      message: "User created successfully"
+    });
   } catch (error: any) {
     console.error("Create user error:", error);
+    
+    if (error.code === 11000) {
+      // MongoDB duplicate key error
+      if (error.keyPattern?.email && error.keyPattern?.companyCode) {
+        return res.status(400).json({ message: "Email already exists in this company" });
+      } else if (error.keyPattern?.email) {
+        return res.status(400).json({ message: "Email already registered" });
+      }
+    }
+    
     res.status(500).json({ message: error.message });
   }
 });
@@ -934,7 +1558,8 @@ function getUserResponse(user: any) {
     isActive: user.isActive,
     lastLoginAt: user.lastLoginAt,
     createdAt: user.createdAt,
-    updatedAt: user.updatedAt
+    updatedAt: user.updatedAt,
+    companyCode: user.companyCode
   };
 }
 /*
@@ -989,12 +1614,22 @@ app.post("/api/tickets", authenticateToken, async (req: AuthRequest, res) => {
   try {
     const { title, description, priority, department, category, attachments } = req.body;
 
-    const ticketCount = await TicketModel.countDocuments();
-    const ticketNumber = `TKT-${String(ticketCount + 1).padStart(5, "0")}`;
+    // 🔹 Identify logged-in user (Client or ClientUser)
+    const creator = await UserModel.findById(req.user!._id);
+    if (!creator) return res.status(404).json({ message: "User not found" });
 
-    const client = await UserModel.findById(req.user!._id);
-    
-    // ✅ Create ticket with client's department
+    // 🔹 Use companyCode directly (since both client & clientusers have same companyCode)
+    const companyCode = creator.companyCode;
+    if (!companyCode) return res.status(400).json({ message: "Missing companyCode" });
+
+    // 🔹 Generate ticket number (global or per-company, optional)
+    const ticketCount = await TicketModel.countDocuments({ companyCode });
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    const ticketNumber = `TKT-${companyCode}-${String(
+      ticketCount + 1
+    ).padStart(5, "0")}-${randomSuffix}`;
+
+    // 🔹 Prepare ticket base data
     const ticketData: any = {
       ticketNumber,
       title,
@@ -1002,91 +1637,78 @@ app.post("/api/tickets", authenticateToken, async (req: AuthRequest, res) => {
       priority,
       category,
       department,
-      status: TicketStatus.OPEN,
-      clientId: req.user!._id,
-      clientName: client?.name,
-      clientEmail: client?.email, // Store client email for notifications
       attachments,
+      companyCode,
+      status: TicketStatus.OPEN,
+      clientId: creator._id, // who created
+      clientName: creator.name,
+      clientEmail: creator.email,
+      createdBy: creator._id,
+      createdByName: creator.name,
+      createdByRole: creator.role,
       assignedEmployees: [],
     };
 
-    let assignedEmployeesDetails: any[] = [];
-    let assignedEmails: string[] = [];
-
-    // ✅ Auto-assignment logic for multiple employees
-    const availableEmployees = await UserModel.find({ 
+    // 🔹 Find employees in same department & company
+    const employees = await UserModel.find({
       role: UserRole.EMPLOYEE,
       department,
+    //  companyCode,
     });
 
-    if (availableEmployees.length > 0) {
-      // Check workload for all employees using the new assignedEmployees field
-      const employeesWithWorkload = await Promise.all(
-        availableEmployees.map(async (employee) => {
-          const activeTicketCount = await TicketModel.countDocuments({
-            "assignedEmployees.employeeId": employee._id.toString(),
-            status: { $in: [TicketStatus.OPEN, TicketStatus.IN_PROGRESS] }
-          });
-          return {
-            employee,
-            activeTicketCount,
-            isAvailable: activeTicketCount < 3
-          };
-        })
+    let assignedEmployeesDetails: any[] = [];
+
+    if (employees.length > 0) {
+      const workloads = await Promise.all(
+        employees.map(async (emp) => ({
+          emp,
+          count: await TicketModel.countDocuments({
+            "assignedEmployees.employeeId": emp._id.toString(),
+            status: { $in: [TicketStatus.OPEN, TicketStatus.IN_PROGRESS] },
+          }),
+        }))
       );
 
-      // Get available employees
-      const availableEmployeesList = employeesWithWorkload
-        .filter(emp => emp.isAvailable)
-        .sort((a, b) => a.activeTicketCount - b.activeTicketCount)
-        .slice(0, 2); // Take max 2 employees for auto-assignment
+      const available = workloads
+        .filter((w) => w.count < 3)
+        .sort((a, b) => a.count - b.count)
+        .slice(0, 2);
 
-      if (availableEmployeesList.length > 0) {
-        // Assign multiple employees
-        assignedEmployeesDetails = availableEmployeesList.map((empData, index) => ({
-          employeeId: empData.employee._id.toString(),
-          employeeName: empData.employee.name,
-          employeeEmail: empData.employee.email,
+      if (available.length) {
+        assignedEmployeesDetails = available.map((w, i) => ({
+          employeeId: w.emp._id.toString(),
+          employeeName: w.emp.name,
+          employeeEmail: w.emp.email,
           assignedAt: new Date(),
-          isPrimary: index === 0, // First one is primary
-          department: empData.employee.department || department
+          isPrimary: i === 0,
+          department: w.emp.department,
         }));
 
-        // Collect assigned employee emails
-        assignedEmails = assignedEmployeesDetails.map(emp => emp.employeeEmail);
-
-        // Update ticket data with assignments
         ticketData.assignedEmployees = assignedEmployeesDetails;
         ticketData.status = TicketStatus.IN_PROGRESS;
-        
-        // For backward compatibility, set the primary assignee
-        if (assignedEmployeesDetails.length > 0) {
-          ticketData.assignedTo = assignedEmployeesDetails[0].employeeId;
-          ticketData.assignedToName = assignedEmployeesDetails[0].employeeName;
-        }
-
-        console.log(`✅ Ticket auto-assigned to ${assignedEmployeesDetails.map(emp => emp.employeeName).join(', ')} (Department: ${department})`);
-      } else {
-        console.log(`⚠️ No available employees in ${department} department`);
+        ticketData.assignedTo = assignedEmployeesDetails[0].employeeId;
+        ticketData.assignedToName = assignedEmployeesDetails[0].employeeName;
       }
-    } else {
-      console.log(`⚠️ No employees found in ${department} department`);
     }
 
+    // 🔹 Create new ticket
     const ticket = await TicketModel.create(ticketData);
 
-    // ✅ Send email notifications after successful ticket creation
-    await sendTicketCreationEmails(ticket, assignedEmployeesDetails, client);
+    // 🔹 Send notifications
+    await sendTicketCreationEmails(ticket, assignedEmployeesDetails,companyCode, creator);
 
-    res.json(ticket);
+    res.status(201).json({
+      message: "✅ Ticket created successfully",
+      ticket: ticket,
+    });
   } catch (error: any) {
     console.error("Ticket creation error:", error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: error.message || "Internal Server Error" });
   }
 });
 
-// ✅ Email notification function
-async function sendTicketCreationEmails(ticket: any, assignedEmployees: any[], client: any) {
+// ✅ Updated Email notification function with client user support
+async function sendTicketCreationEmails(ticket: any, assignedEmployees: any[], companyCode: any,  creator: any) {
   try {
     const adminUsers = await UserModel.find({ role: UserRole.ADMIN });
     const adminEmails = adminUsers.map(admin => admin.email);
@@ -1094,6 +1716,11 @@ async function sendTicketCreationEmails(ticket: any, assignedEmployees: any[], c
     const assignedEmployeeNames = assignedEmployees.map(emp => emp.employeeName).join(', ');
     const priorityColor = getPriorityColor(ticket.priority);
     const categoryIcon = getCategoryIcon(ticket.category);
+
+    // Determine creator information for email display
+    const createdByText = creator.role === UserRole.CLIENT_USER 
+      ? `Created by ${creator.name} (Team Member) on behalf of ${companyCode.name}`
+      : `Created by This Company ${companyCode.name}`;
 
     // Base email template
     const baseEmailHtml = `
@@ -1113,6 +1740,9 @@ async function sendTicketCreationEmails(ticket: any, assignedEmployees: any[], c
               </span>
               <span>${categoryIcon} ${ticket.category}</span>
               <span>🏢 ${ticket.department}</span>
+            </div>
+            <div style="margin-top: 10px; font-size: 13px; color: #6b7280;">
+              👤 ${createdByText}
             </div>
           </div>
 
@@ -1167,28 +1797,51 @@ async function sendTicketCreationEmails(ticket: any, assignedEmployees: any[], c
             to: employee.employeeEmail,
             subject: `🎫 New Ticket Assigned: ${ticket.ticketNumber} - ${ticket.title}`,
             html: employeeEmailHtml,
-            text: `New ticket ${ticket.ticketNumber} has been assigned to you. Title: ${ticket.title}, Priority: ${ticket.priority}, Department: ${ticket.department}`
+            text: `New ticket ${ticket.ticketNumber} has been assigned to you. Title: ${ticket.title}, Priority: ${ticket.priority}, Department: ${ticket.department}. Created by: ${createdByText}`
           })
         );
       });
     }
 
-    // 2. Send to client (creator)
+    // 2. Send to client (organization)
     const clientEmailHtml = baseEmailHtml.replace(
       '🎫 New Support Ticket Created',
-      `🎫 Your Ticket Has Been Created - ${ticket.ticketNumber}`
+      creator.role === UserRole.CLIENT_USER 
+        ? `🎫 New Ticket Created by Team Member - ${ticket.ticketNumber}`
+        : `🎫 Your Ticket Has Been Created - ${ticket.ticketNumber}`
     );
     
     emailPromises.push(
       vertifitEmailService.sendEmail({
-        to: client.email,
-        subject: `🎫 Ticket Created Successfully: ${ticket.ticketNumber} - ${ticket.title}`,
+        to: creator.email,
+        subject: creator.role === UserRole.CLIENT_USER 
+          ? `🎫 New Ticket Created by Team Member: ${ticket.ticketNumber} - ${ticket.title}`
+          : `🎫 Ticket Created Successfully: ${ticket.ticketNumber} - ${ticket.title}`,
         html: clientEmailHtml,
-        text: `Your ticket ${ticket.ticketNumber} has been created successfully. We'll notify you when it's assigned.`
+        text: creator.role === UserRole.CLIENT_USER 
+          ? `A new ticket ${ticket.ticketNumber} has been created by your team member ${creator.name}. Title: ${ticket.title}, Priority: ${ticket.priority}`
+          : `Your ticket ${ticket.ticketNumber} has been created successfully. We'll notify you when it's assigned.`
       })
     );
 
-    // 3. Send to all admins
+    // 3. Send to creator if it's a client user (different from client email)
+    if (creator.role === UserRole.CLIENT_USER && creator.email !== creator.email) {
+      const creatorEmailHtml = baseEmailHtml.replace(
+        '🎫 New Support Ticket Created',
+        `🎫 Your Ticket Has Been Created - ${ticket.ticketNumber}`
+      );
+      
+      emailPromises.push(
+        vertifitEmailService.sendEmail({
+          to: creator.email,
+          subject: `🎫 Ticket Created Successfully: ${ticket.ticketNumber} - ${ticket.title}`,
+          html: creatorEmailHtml,
+          text: `Your support ticket has been created successfully on behalf of this Company ${companyCode.name}. Ticket #: ${ticket.ticketNumber}, Title: ${ticket.title}`
+        })
+      );
+    }
+
+    // 4. Send to all admins
     if (adminEmails.length > 0) {
       const adminEmailHtml = baseEmailHtml.replace(
         '🎫 New Support Ticket Created',
@@ -1200,7 +1853,7 @@ async function sendTicketCreationEmails(ticket: any, assignedEmployees: any[], c
           to: adminEmails,
           subject: `🎫 New Ticket Created: ${ticket.ticketNumber} - ${ticket.title}`,
           html: adminEmailHtml,
-          text: `New ticket ${ticket.ticketNumber} created by ${client.name}. Title: ${ticket.title}, Department: ${ticket.department}`
+          text: `New ticket ${ticket.ticketNumber} created. Title: ${ticket.title}, Department: ${ticket.department}, Created by: ${createdByText}`
         })
       );
     }
@@ -1215,14 +1868,15 @@ async function sendTicketCreationEmails(ticket: any, assignedEmployees: any[], c
   }
 }
 
-// ✅ Helper functions for styling
+// Helper functions (keep your existing ones)
 function getPriorityColor(priority: string): string {
-  const colors: Record<string, string> = {
-    high: '#e53e3e',
+  const colors = {
+    low: '#38a169',
     medium: '#ed8936',
-    low: '#38a169'
+    high: '#e53e3e',
+    urgent: '#9f2fbf'
   };
-  return colors[priority.toLowerCase()] || '#718096';
+  return colors[priority as keyof typeof colors] || '#718096';
 }
 
 function getCategoryIcon(category: string): string {
@@ -1232,7 +1886,7 @@ function getCategoryIcon(category: string): string {
     network: '🌐',
     other: '📄'
   };
-  return icons[category.toLowerCase()] || '📋';
+  return icons[category as keyof typeof icons] || '📄';
 }
  app.get("/api/tickets", authenticateToken, async (req: AuthRequest, res) => {
   try {
@@ -1271,15 +1925,69 @@ app.get("/api/tickets/assigned", authenticateToken, async (req: AuthRequest, res
   }
 });
 
-app.get("/api/tickets/:id", authenticateToken, async (req, res) => {
+app.get("/api/tickets/:id", authenticateToken, async (req: AuthRequest, res) => {
   try {
     const ticket = await TicketModel.findById(req.params.id);
     if (!ticket) {
       return res.status(404).json({ message: "Ticket not found" });
     }
-    res.json(ticket);
+
+    // Authorization check
+    const currentUser = req.user!;
+     console.log('currentuser deatls ',currentUser,currentUser.role,'ticketcomanycode',ticket.companyCode ,'compaycode',currentUser.companyCode);
+    if (
+      currentUser.role === UserRole.ADMIN ||
+      currentUser.role === UserRole.EMPLOYEE ||
+      (currentUser.role === UserRole.CLIENT && ticket.companyCode === currentUser.companyCode) ||
+      (currentUser.role === UserRole.CLIENT_USER && ticket.companyCode === currentUser.companyCode)
+     
+    ) {
+      
+      res.json(ticket);
+    } else {
+      return res.status(403).json({ message: "Forbidden: You do not have access to this ticket" });
+    }
   } catch (error: any) {
     res.status(500).json({ message: error.message });
+  }
+});
+
+// Get tickets created by a specific user
+app.get("/api/tickets/by-user/:userId", authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const { userId } = req.params;
+    const currentClient = req.user;
+
+    if (!currentClient || !currentClient.companyCode) {
+      return res.status(401).json({ message: "Unauthorized or missing company code" });
+    }
+
+    // Verify user exists in company
+    const targetUser = await UserModel.findOne({
+      _id: userId,
+      companyCode: currentClient.companyCode,
+    });
+
+    if (!targetUser) {
+      return res.status(404).json({ message: "User not found in your company" });
+    }
+
+    // PRIMARY QUERY: Based on your actual data structure
+    const tickets = await TicketModel.find({
+      companyCode: currentClient.companyCode,
+      $or: [
+        { clientId: userId },  // User created the ticket (based on your data)
+        { "assignedEmployees.employeeId": userId }  // User is assigned to ticket
+      ]
+    })
+    .sort({ createdAt: -1 })
+    .populate('assignedEmployees.employeeId', 'name email') // Optional: populate assignee details
+    .lean();
+
+    res.json(tickets);
+  } catch (error: any) {
+    console.error("Get tickets by user error:", error);
+    res.status(500).json({ message: "Failed to fetch tickets for user" });
   }
 });
 

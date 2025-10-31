@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { title } from "process";
 
 export function AppSidebar() {
   const [location] = useLocation();
@@ -44,7 +45,7 @@ export function AppSidebar() {
       url: "/client/dashboard",
       icon: LayoutDashboard,
     },
-      {
+    {
       title: "Profile",
       url: "/client/profile",
       icon: Users,
@@ -59,6 +60,37 @@ export function AppSidebar() {
       url: "/client/create-ticket",
       icon: Ticket,
     },
+    {
+      title: "Create User",
+      url: "/client/create-user",
+      icon: Users,
+    },
+    { title: "Team Management",
+      url: "/client/clientUserManagement",
+      icon: Users,
+    },
+  ];
+
+  const clientUserMenuItems = [
+    {
+      title: "Dashboard",
+      url: "/clientUser/dashboard",
+      icon: LayoutDashboard,
+    },
+{ title: "Profile",
+      url: "/clientUser/profile",
+      icon: Users,
+    },
+    {
+      title: "My Tickets",
+      url: "/clientUser/tickets",
+      icon: Ticket,
+    },
+    {
+      title: "Create Ticket",
+      url: "/clientUser/create-ticket",
+      icon: Ticket,
+    },
   ];
 
   const employeeMenuItems = [
@@ -67,7 +99,7 @@ export function AppSidebar() {
       url: "/employee/dashboard",
       icon: LayoutDashboard,
     },
-     {
+    {
       title: "Profile",
       url: "/employee/profile",
       icon: Users,
@@ -85,7 +117,7 @@ export function AppSidebar() {
       url: "/admin/dashboard",
       icon: LayoutDashboard,
     },
-      {
+    {
       title: "Profile",
       url: "/admin/profile",
       icon: Users,
@@ -100,7 +132,7 @@ export function AppSidebar() {
       url: "/admin/employees",
       icon: UserCog,
     },
-     {
+    {
       title: "UserManagement",
       url: "/admin/users",
       icon: UserCog,
@@ -117,12 +149,22 @@ export function AppSidebar() {
     },
   ];
 
-  const menuItems =
-    user?.role === UserRole.ADMIN
-      ? adminMenuItems
-      : user?.role === UserRole.EMPLOYEE
-      ? employeeMenuItems
-      : clientMenuItems;
+  // Determine which menu items to show based on user role
+  const getMenuItems = () => {
+    switch (user?.role) {
+      case UserRole.ADMIN:
+        return adminMenuItems;
+      case UserRole.EMPLOYEE:
+        return employeeMenuItems;
+      case UserRole.CLIENT_USER:
+        return clientUserMenuItems;
+      case UserRole.CLIENT:
+      default:
+        return clientMenuItems;
+    }
+  };
+
+  const menuItems = getMenuItems();
 
   return (
     <Sidebar>
@@ -132,9 +174,9 @@ export function AppSidebar() {
             <Settings className="h-5 w-5 text-primary-foreground" />
           </div>
           <div className="flex flex-col">
-            <span className="font-semibold text-sm"> Vertif ServiceDesk</span>
+            <span className="font-semibold text-sm">Vertif ServiceDesk</span>
             <span className="text-xs text-muted-foreground capitalize">
-              {user?.role} Portal
+              {user?.role?.replace('_', ' ')} Portal
             </span>
           </div>
         </div>

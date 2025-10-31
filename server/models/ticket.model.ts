@@ -21,7 +21,7 @@ export interface ITicket extends Document {
   status: TicketStatus;
   clientId: string;
   clientName?: string;
-  
+  companyCode?: string;
   // Single assignment (backward compatibility)
   assignedTo?: string;
   assignedToName?: string;
@@ -102,7 +102,10 @@ const ticketSchema = new Schema<ITicket>(
       type: String,
       trim: true 
     },
-    
+    companyCode: { 
+      type: String,
+      index: true 
+    },
     // Single assignment (for backward compatibility)
     assignedTo: { 
       type: String,
