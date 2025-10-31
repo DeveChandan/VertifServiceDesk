@@ -395,7 +395,7 @@ export default function ClientUserManagement() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Client User Management</h1>
+          <h1 className="text-3xl text-white font-bold tracking-tight">Client User Management</h1>
           <p className="text-muted-foreground">
             Manage client users and their access permissions
           </p>

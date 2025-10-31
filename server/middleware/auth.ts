@@ -19,26 +19,47 @@ export function authenticateToken(
   next: NextFunction
 ) {
   const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
+  const token = authHeader && authHeader.split(" ")[1]; // ✅ Only declare once
 
   if (!token) {
+    console.log('No token provided. Returning 401.');
     return res.status(401).json({ message: "Access token required" });
   }
 
-  console.log('Token:', token);
+  console.log('Authenticating token...');
+  console.log('Received Authorization header:', authHeader);
+  console.log('Token received:', token);
+  console.log('Using JWT_SECRET:', JWT_SECRET ? '[SECRET_PRESENT]' : '[SECRET_MISSING]');
+  
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as {
       _id: string;
       email: string;
       role: UserRole;
       companyCode?: string;
+      iat: number;
+      exp: number;
     };
-    console.log('Decoded token:', decoded);
+    
+    console.log('Token successfully decoded:', decoded);
+    
+    // Check if token is expired (jwt.verify usually handles this, but good for explicit logging)
+    if (decoded.exp * 1000 < Date.now()) {
+      console.warn('Token is expired according to decoded.exp');
+      return res.status(401).json({ message: "Token expired" });
+    }
+    
     req.user = decoded;
     next();
-  } catch (error) {
-    console.error('Token verification error:', error);
-    return res.status(403).json({ message: "Invalid or expired token" });
+  } catch (error: any) {
+    console.error('Token verification failed:', error.message);
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: "Token expired" });
+    } else if (error.name === 'JsonWebTokenError') {
+      return res.status(403).json({ message: "Invalid token" });
+    } else {
+      return res.status(403).json({ message: "Token verification error" });
+    }
   }
 }
 

@@ -22,7 +22,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // -----------------------------
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
-  const UPLOADS_FOLDER = path.join(__dirname, "../../uploads");
+  const UPLOADS_FOLDER = process.env.UPLOAD_DIR || path.join(__dirname, "../../uploads");
 
   // Ensure uploads folder exists
   if (!fs.existsSync(UPLOADS_FOLDER)) {
@@ -1050,94 +1050,57 @@ app.get("/api/users", authenticateToken, authorizeRoles(UserRole.ADMIN), async (
 });
 
 // Get user by ID
-app.get("/api/users/:id", authenticateToken, authorizeRoles(UserRole.ADMIN), async (req, res) => {
+app.get("/api/users/:id", authenticateToken, async (req: AuthRequest, res) => {
   try {
-    const user = await UserModel.findById(req.params.id)
-      .select("-password")
-      .lean(); // Use lean() for better performance
-    
+    const requestedUserId = req.params.id;
+    const currentUser = req.user!;
+
+    let user = await UserModel.findById(requestedUserId).select("-password").lean();
+
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    
-    // If using virtuals, you might need to manually add them
-    const userResponse = getUserResponse(user);
-    
-    // Add virtual fields manually if they're not included by default
-    if (user.address) {
-      userResponse.fullAddress = `${user.address.street}, ${user.address.city}, ${user.address.state} ${user.address.zipCode}, ${user.address.country}`.trim();
-    }
-    
-    if (user.billingAddress) {
-      userResponse.fullBillingAddress = `${user.billingAddress.street}, ${user.billingAddress.city}, ${user.billingAddress.state} ${user.billingAddress.zipCode}, ${user.billingAddress.country}`.trim();
-    }
-    
-    if (user.shippingAddress) {
-      userResponse.fullShippingAddress = `${user.shippingAddress.street}, ${user.shippingAddress.city}, ${user.shippingAddress.state} ${user.shippingAddress.zipCode}, ${user.shippingAddress.country}`.trim();
-    }
-    
-    // Calculate age if dateOfBirth exists
-    if (user.dateOfBirth) {
-      const today = new Date();
-      const birthDate = new Date(user.dateOfBirth);
-      let age = today.getFullYear() - birthDate.getFullYear();
-      const monthDiff = today.getMonth() - birthDate.getMonth();
-      
-      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-        age--;
-      }
-      userResponse.age = age;
-    }
-    
-    // Calculate tenure if employmentDetails.hireDate exists
-    if (user.employmentDetails?.hireDate) {
-      const today = new Date();
-      const hireDate = new Date(user.employmentDetails.hireDate);
-      const years = today.getFullYear() - hireDate.getFullYear();
-      const months = today.getMonth() - hireDate.getMonth();
-      
-      let totalMonths = years * 12 + months;
-      if (today.getDate() < hireDate.getDate()) {
-        totalMonths--;
-      }
-      
-      const tenureYears = Math.floor(totalMonths / 12);
-      const tenureMonths = totalMonths % 12;
-      
-      if (tenureYears === 0) {
-        userResponse.tenure = `${tenureMonths} month${tenureMonths !== 1 ? 's' : ''}`;
-      } else if (tenureMonths === 0) {
-        userResponse.tenure = `${tenureYears} year${tenureYears !== 1 ? 's' : ''}`;
+
+    // Authorization Logic
+    if (currentUser.role === UserRole.ADMIN) {
+      // Admin can see all details
+      res.json(getUserResponse(user));
+    } else if (currentUser.role === UserRole.EMPLOYEE) {
+      // Employee can see their own full details, and other employees' basic details
+      if (currentUser._id.toString() === requestedUserId) {
+        res.json(getUserResponse(user));
+      } else if (user.role === UserRole.EMPLOYEE) {
+        // Return basic employee details for other employees
+        res.json({
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          jobTitle: user.jobTitle,
+          department: user.department,
+          role: user.role,
+        });
       } else {
-        userResponse.tenure = `${tenureYears} year${tenureYears !== 1 ? 's' : ''} ${tenureMonths} month${tenureMonths !== 1 ? 's' : ''}`;
+        return res.status(403).json({ message: "Forbidden: You do not have access to this user's details" });
       }
-    }
-    
-    // Calculate client relationship duration if clientDetails.since exists
-    if (user.clientDetails?.since) {
-      const today = new Date();
-      const sinceDate = new Date(user.clientDetails.since);
-      const years = today.getFullYear() - sinceDate.getFullYear();
-      const months = today.getMonth() - sinceDate.getMonth();
-      
-      let totalMonths = years * 12 + months;
-      if (today.getDate() < sinceDate.getDate()) {
-        totalMonths--;
-      }
-      
-      const durationYears = Math.floor(totalMonths / 12);
-      const durationMonths = totalMonths % 12;
-      
-      if (durationYears === 0) {
-        userResponse.clientSinceDuration = `${durationMonths} month${durationMonths !== 1 ? 's' : ''}`;
-      } else if (durationMonths === 0) {
-        userResponse.clientSinceDuration = `${durationYears} year${durationYears !== 1 ? 's' : ''}`;
+    } else if (currentUser.role === UserRole.CLIENT || currentUser.role === UserRole.CLIENT_USER) {
+      // Clients and Client Users can see basic details of Employees
+      if (user.role === UserRole.EMPLOYEE) {
+        res.json({
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          jobTitle: user.jobTitle,
+          department: user.department,
+          role: user.role,
+        });
       } else {
-        userResponse.clientSinceDuration = `${durationYears} year${durationYears !== 1 ? 's' : ''} ${durationMonths} month${durationMonths !== 1 ? 's' : ''}`;
+        return res.status(403).json({ message: "Forbidden: You do not have access to this user's details" });
       }
+    } else {
+      return res.status(403).json({ message: "Forbidden: You do not have access to this user's details" });
     }
-    
-    res.json(userResponse);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -1769,7 +1732,7 @@ async function sendTicketCreationEmails(ticket: any, assignedEmployees: any[], c
 
           <!-- Quick Actions -->
           <div style="background: #edf2f7; padding: 20px; border-radius: 8px; text-align: center;">
-            <a href="${process.env.APP_URL}/tickets/${ticket._id}" 
+            <a href="${process.env.APP_URL}/login" 
                style="background: #667eea; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">
               📝 View Ticket Details
             </a>
@@ -2318,7 +2281,7 @@ async function sendTicketStatusUpdateEmails(oldTicket: any, updatedTicket: any) 
 
               <!-- Quick Actions -->
               <div style="background: #edf2f7; padding: 20px; border-radius: 8px; text-align: center;">
-                <a href="${process.env.APP_URL}/tickets/${updatedTicket._id}" 
+                <a href="${process.env.APP_URL}/login" 
                    style="background: ${config.color}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">
                   📝 View Ticket Details
                 </a>
@@ -2436,7 +2399,7 @@ async function sendAssignmentEmails(ticket: any, newAssignments: any[], oldAssig
 
           <!-- Quick Actions -->
           <div style="background: #edf2f7; padding: 20px; border-radius: 8px; text-align: center;">
-            <a href="${process.env.APP_URL}/tickets/${ticket._id}" 
+            <a href="${process.env.APP_URL}/login" 
                style="background: #38a169; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">
               📝 View Ticket Details
             </a>

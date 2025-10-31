@@ -104,7 +104,7 @@ export default function ClientUserTickets() {
         <Button variant="outline" size="icon" onClick={() => setLocation("/client/clientUserManagement")}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <h1 className="text-3xl font-bold tracking-tight">Tickets by Client User</h1>
+        <h1 className="text-3xl text-white font-bold tracking-tight">Tickets by Client User</h1>
       </div>
 
       <Card>

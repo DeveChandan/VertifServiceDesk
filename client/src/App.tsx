@@ -12,6 +12,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { ProtectedRoute } from "@/components/protected-route";
 import { UserRole } from "@shared/schema";
 
+// Page imports
 import LoginPage from "@/pages/login";
 import RegisterPage from "@/pages/register";
 import ClientDashboard from "@/pages/client/dashboard";
@@ -41,6 +42,19 @@ declare global {
   }
 }
 
+// ==================== COMPONENTS ====================
+
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    </div>
+  );
+}
+
 function VANTABackground({ children }: { children: React.ReactNode }) {
   const vantaRef = useRef<HTMLDivElement>(null);
   const vantaEffect = useRef<any>(null);
@@ -48,12 +62,10 @@ function VANTABackground({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const initVanta = () => {
       if (window.VANTA && vantaRef.current) {
-        // Destroy existing effect if any
         if (vantaEffect.current) {
           vantaEffect.current.destroy();
         }
 
-        // Initialize VANTA BIRDS
         vantaEffect.current = window.VANTA.BIRDS({
           el: vantaRef.current,
           mouseControls: true,
@@ -76,17 +88,14 @@ function VANTABackground({ children }: { children: React.ReactNode }) {
       }
     };
 
-    // Check if scripts are already loaded
-    const threeJsLoaded = document.querySelector('script[src*="three.js"]');
-    const vantaLoaded = document.querySelector('script[src*="vanta"]');
-
     const loadScripts = () => {
-      // Load Three.js if not already loaded
+      const threeJsLoaded = document.querySelector('script[src*="three.js"]');
+      const vantaLoaded = document.querySelector('script[src*="vanta"]');
+
       if (!threeJsLoaded) {
         const threeScript = document.createElement('script');
         threeScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r121/three.min.js';
         threeScript.onload = () => {
-          // Load VANTA after Three.js is loaded
           if (!vantaLoaded) {
             const vantaScript = document.createElement('script');
             vantaScript.src = 'https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.birds.min.js';
@@ -98,21 +107,17 @@ function VANTABackground({ children }: { children: React.ReactNode }) {
         };
         document.head.appendChild(threeScript);
       } else if (!vantaLoaded) {
-        // Three.js is loaded but VANTA is not
         const vantaScript = document.createElement('script');
         vantaScript.src = 'https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.birds.min.js';
         vantaScript.onload = initVanta;
         document.head.appendChild(vantaScript);
       } else {
-        // Both scripts are already loaded
         initVanta();
       }
     };
 
-    // Small delay to ensure DOM is ready
     const timer = setTimeout(loadScripts, 100);
 
-    // Handle window resize
     const handleResize = () => {
       if (vantaEffect.current && typeof vantaEffect.current.onResize === 'function') {
         setTimeout(() => {
@@ -123,7 +128,6 @@ function VANTABackground({ children }: { children: React.ReactNode }) {
 
     window.addEventListener('resize', handleResize);
 
-    // Cleanup function
     return () => {
       clearTimeout(timer);
       window.removeEventListener('resize', handleResize);
@@ -138,17 +142,9 @@ function VANTABackground({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div
-      ref={vantaRef}
-      className="min-h-screen relative overflow-hidden bg-black"
-    >
-      {/* Very light overlay to ensure content readability */}
+    <div ref={vantaRef} className="min-h-screen relative overflow-hidden bg-black">
       <div className="absolute inset-0 bg-black/5" />
-      
-      {/* Content */}
-      <div className="relative z-10 h-full">
-        {children}
-      </div>
+      <div className="relative z-10 h-full">{children}</div>
     </div>
   );
 }
@@ -157,11 +153,11 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   const style = {
     "--sidebar-width": "16rem",
     "--sidebar-width-icon": "3rem",
-  };
+  } as React.CSSProperties;
 
   return (
     <VANTABackground>
-      <SidebarProvider style={style as React.CSSProperties}>
+      <SidebarProvider style={style}>
         <div className="flex h-screen w-full">
           <AppSidebar />
           <div className="flex flex-col flex-1 overflow-hidden">
@@ -179,333 +175,140 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
+// ==================== ROUTE COMPONENTS ====================
+
 function HomeRedirect() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
 
   if (!isAuthenticated) {
     return <Redirect to="/login" />;
   }
 
-  if (user?.role === UserRole.ADMIN) {
-    return <Redirect to="/admin/dashboard" />;
-  } else if (user?.role === UserRole.EMPLOYEE) {
-    return <Redirect to="/employee/dashboard" />;
-  } else if (user?.role=== UserRole.CLIENT) {
-    return <Redirect to="/client/dashboard" />;
-  } else {
-    return <Redirect to="/clientUser/dashboard" />;
-  }
+  // Role-based redirection
+  const roleRoutes = {
+    [UserRole.ADMIN]: "/admin/dashboard",
+    [UserRole.EMPLOYEE]: "/employee/dashboard",
+    [UserRole.CLIENT]: "/client/dashboard",
+    [UserRole.CLIENT_USER]: "/clientUser/dashboard",
+  };
+
+  const redirectTo = roleRoutes[user?.role as UserRole] || "/login";
+  return <Redirect to={redirectTo} />;
 }
 
-function Router() {
+// Route configuration helper
+interface RouteConfig {
+  path: string;
+  component: React.ComponentType;
+  allowedRoles: UserRole[];
+  layout?: boolean;
+}
+
+const protectedRoutes: RouteConfig[] = [
+  // Client User Routes
+  { path: "/clientUser/dashboard", component: ClientUserDashboard, allowedRoles: [UserRole.CLIENT_USER] },
+  { path: "/clientUser/create-ticket", component: ClientUserCreateTicketPage, allowedRoles: [UserRole.CLIENT_USER] },
+  { path: "/clientUser/tickets", component: ClientUserDashboard, allowedRoles: [UserRole.CLIENT_USER] },
+  { path: "/clientUser/tickets/:id", component: TicketDetailPage, allowedRoles: [UserRole.CLIENT_USER] },
+  { path: "/clientUser/profile", component: ProfilePage, allowedRoles: [UserRole.CLIENT_USER] },
+
+  // Client Routes
+  { path: "/client/dashboard", component: ClientDashboard, allowedRoles: [UserRole.CLIENT] },
+  { path: "/client/clientUserManagement", component: ClientUserManagement, allowedRoles: [UserRole.CLIENT] },
+  { path: "/client/clientUserTickets/:userId", component: ClientUserTickets, allowedRoles: [UserRole.CLIENT] },
+  { path: "/client/create-ticket", component: CreateTicketPage, allowedRoles: [UserRole.CLIENT] },
+  { path: "/client/create-user", component: ClientUserCreate, allowedRoles: [UserRole.CLIENT] },
+  { path: "/client/tickets", component: ClientTicketsPage, allowedRoles: [UserRole.CLIENT] },
+  { path: "/client/tickets/:id", component: TicketDetailPage, allowedRoles: [UserRole.CLIENT] },
+  { path: "/client/profile", component: ProfilePage, allowedRoles: [UserRole.CLIENT] },
+
+  // Employee Routes
+  { path: "/employee/dashboard", component: EmployeeDashboard, allowedRoles: [UserRole.EMPLOYEE] },
+  { path: "/employee/profile", component: ProfilePage, allowedRoles: [UserRole.EMPLOYEE] },
+  { path: "/employee/tickets/:id", component: TicketDetailPage, allowedRoles: [UserRole.EMPLOYEE] },
+
+  // Admin Routes
+  { path: "/admin/dashboard", component: AdminDashboard, allowedRoles: [UserRole.ADMIN] },
+  { path: "/admin/tickets", component: AdminTicketsPage, allowedRoles: [UserRole.ADMIN] },
+  { path: "/admin/tickets/:id", component: TicketDetailPage, allowedRoles: [UserRole.ADMIN] },
+  { path: "/admin/employees", component: EmployeesPage, allowedRoles: [UserRole.ADMIN] },
+  { path: "/admin/users", component: UserManagement, allowedRoles: [UserRole.ADMIN] },
+  { path: "/admin/clients", component: ClientsPage, allowedRoles: [UserRole.ADMIN] },
+  { path: "/admin/analytics", component: AnalyticsPage, allowedRoles: [UserRole.ADMIN] },
+  { path: "/admin/profile", component: ProfilePage, allowedRoles: [UserRole.ADMIN] },
+
+  // Generic Routes
+  { path: "/ticket-detail/:id", component: TicketDetailPage, allowedRoles: [UserRole.ADMIN, UserRole.EMPLOYEE, UserRole.CLIENT, UserRole.CLIENT_USER] },
+];
+
+const publicRoutes = [
+  { path: "/login", component: LoginPage },
+  { path: "/register", component: RegisterPage },
+  { path: "/reset-password", component: ResetPasswordPage },
+];
+
+// Route renderer component
+function ProtectedRouteRenderer({ route }: { route: RouteConfig }) {
   const { isAuthenticated } = useAuth();
+  const Component = route.component;
+
+  if (!isAuthenticated) {
+    return <Redirect to="/login" />;
+  }
+
+  const content = (
+    <ProtectedRoute allowedRoles={route.allowedRoles}>
+      <Component />
+    </ProtectedRoute>
+  );
+
+  return route.layout !== false ? (
+    <AuthenticatedLayout>{content}</AuthenticatedLayout>
+  ) : (
+    content
+  );
+}
+
+// ==================== ROUTER ====================
+
+function Router() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  // Show loading screen while auth is being validated
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
 
   return (
     <Switch>
+      {/* Root route */}
       <Route path="/" component={HomeRedirect} />
-      <Route path="/login" component={LoginPage} />
-      <Route path="/register" component={RegisterPage} />
-<Route path="/reset-password" component={ResetPasswordPage} />
-      {/* All authenticated routes will now have VANTA background */}
-{/*new logic for clientuser routes*/}
 
- <Route path="/clientUser/dashboard">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.CLIENT_USER]}>
-              <ClientUserDashboard />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
+      {/* Public routes */}
+      {publicRoutes.map(({ path, component: Component }) => (
+        <Route key={path} path={path}>
+          {isAuthenticated ? <HomeRedirect /> : <Component />}
+        </Route>
+      ))}
 
-<Route path="/clientUser/create-ticket">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.CLIENT_USER]}>
-              <ClientUserCreateTicketPage />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-      <Route path="/clientUser/tickets">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.CLIENT_USER]}>
-              <ClientUserDashboard />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
+      {/* Protected routes */}
+      {protectedRoutes.map((route) => (
+        <Route key={route.path} path={route.path}>
+          <ProtectedRouteRenderer route={route} />
+        </Route>
+      ))}
 
-      <Route path="/clientUser/tickets/:id">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.CLIENT_USER]}>
-              <TicketDetailPage />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-
-      <Route path="/clientUser/profile">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.CLIENT_USER]}>
-              <ProfilePage />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-      <Route path="/client/dashboard">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.CLIENT]}>
-              <ClientDashboard />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
- <Route path="/client/clientUserManagement">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.CLIENT]}>
-              <ClientUserManagement />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-      <Route path="/client/clientUserTickets/:userId">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.CLIENT]}>
-              <ClientUserTickets />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-      <Route path="/client/create-ticket">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.CLIENT]}>
-              <CreateTicketPage />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
- <Route path="/client/create-user">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.CLIENT]}>
-              <ClientUserCreate />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-      <Route path="/client/tickets">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.CLIENT]}>
-              <ClientTicketsPage />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-
-      <Route path="/client/tickets/:id">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.CLIENT]}>
-              <TicketDetailPage />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-
-      <Route path="/employee/dashboard">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.EMPLOYEE]}>
-              <EmployeeDashboard />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-
-      <Route path="/employee/profile">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.EMPLOYEE]}>
-              <ProfilePage />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-
-      <Route path="/admin/profile">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
-              <ProfilePage />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-
-      <Route path="/client/profile">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.CLIENT]}>
-              <ProfilePage />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-
-      <Route path="/employee/tickets/:id">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.EMPLOYEE]}>
-              <TicketDetailPage />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-
-      <Route path="/admin/dashboard">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
-              <AdminDashboard />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-
-      <Route path="/admin/tickets">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
-              <AdminTicketsPage />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-
-      <Route path="/admin/tickets/:id">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
-              <TicketDetailPage />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-
-      <Route path="/admin/employees">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
-              <EmployeesPage />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-
-      <Route path="/admin/users">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
-              <UserManagement />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-
-      <Route path="/admin/clients">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
-              <ClientsPage />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-
-      <Route path="/admin/analytics">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
-              <AnalyticsPage />
-            </ProtectedRoute>
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-
-      {/* Generic Ticket Detail Page - accessible by all authenticated roles with proper backend authorization */}
-      <Route path="/ticket-detail/:id">
-        {isAuthenticated ? (
-          <AuthenticatedLayout>
-            {/* No specific role check here, as TicketDetailPage handles internal authorization */}
-            <TicketDetailPage />
-          </AuthenticatedLayout>
-        ) : (
-          <Redirect to="/login" />
-        )}
-      </Route>
-
+      {/* 404 route */}
       <Route component={NotFound} />
     </Switch>
   );
 }
+
+// ==================== MAIN APP ====================
 
 function App() {
   return (
