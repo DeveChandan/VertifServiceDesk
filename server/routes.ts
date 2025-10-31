@@ -15,7 +15,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 
-export async function registerRoutes(app: Express): Promise<Server> {
+export async function registerRoutes(app: Express): Promise<void> {
   await connectDB();
 
   // Upload Logic
@@ -2823,7 +2823,5 @@ app.post("/api/admin/send-welcome-email", authenticateToken, authorizeRoles(User
     });
   }
 });
-  const httpServer = createServer(app);
 
-  return httpServer;
 }
