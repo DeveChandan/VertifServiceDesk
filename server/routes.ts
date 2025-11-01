@@ -22,7 +22,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // -----------------------------
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
-  const UPLOADS_FOLDER = process.env.UPLOAD_DIR || path.join(__dirname, "../../uploads");
+  const UPLOADS_FOLDER = process.env.VERCEL_ENV ? path.join('/tmp', 'uploads') : (process.env.UPLOAD_DIR || path.join(__dirname, "../../uploads"));
 
   // Ensure uploads folder exists
   if (!fs.existsSync(UPLOADS_FOLDER)) {
